@@ -42,6 +42,7 @@ def test_runner_writes_the_profile_without_the_password(tmp_path):
         "type": "clickhouse",
         "host": "db.local",
         "port": 18123,
+        "secure": False,
         "user": "loader",
         "password": "{{ env_var('CLICKHOUSE_PASSWORD', '') }}",
         "schema": "canonical",

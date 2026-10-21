@@ -56,6 +56,21 @@ def test_connection_from_url_and_environment(tmp_path):
     assert loaded.shopify.client_id_env == "SHOPIFY_CLIENT_ID"
 
 
+@pytest.mark.parametrize(
+    ("url", "port", "secure"),
+    [
+        ("http://db.local", 8123, False),
+        ("https://db.local", 8443, True),
+        ("https://db.local:9443", 9443, True),
+    ],
+)
+def test_https_turns_on_tls(tmp_path, url, port, secure):
+    data = _base()
+    data["clickhouse"]["url"] = url
+    ch = config.load(_write(tmp_path, data), environ={}).clickhouse
+    assert (ch.port, ch.secure) == (port, secure)
+
+
 def test_missing_password_variable_is_named(tmp_path):
     data = _base()
     data["clickhouse"]["password_env"] = "CH_PASSWORD"
@@ -66,7 +81,7 @@ def test_missing_password_variable_is_named(tmp_path):
 @pytest.mark.parametrize(
     ("url", "message"),
     [
-        ("https://db.local:8443", "only http://"),
+        ("ftp://db.local:8443", "expected http:// or https://"),
         ("http://user:pw@db.local:8123", "remove the password"),
         ("http://db.local:8123/dactopus", "only the user, host and port"),
     ],

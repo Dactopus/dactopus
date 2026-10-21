@@ -44,6 +44,7 @@ def write_profile(config: Config, project: Path) -> Path:
                     "type": "clickhouse",
                     "host": ch.host,
                     "port": ch.port,
+                    "secure": ch.secure,
                     "user": ch.user,
                     "password": "{{ env_var('CLICKHOUSE_PASSWORD', '') }}",
                     # The database the canonical tables are written to.
