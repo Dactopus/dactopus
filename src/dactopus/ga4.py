@@ -6,6 +6,7 @@ import os
 import re
 import sys
 from datetime import date, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
@@ -160,7 +161,7 @@ class BigQueryExport:
         self._project = package.project
         self._source_project, self._dataset = package.dataset.split(".")
         self._rest = AuthorizedSession(credentials)
-        self._read = BigQueryReadClient(credentials=credentials)
+        self._read_client = partial(BigQueryReadClient, credentials=credentials)
 
     def _get(self, path: str, **params: str) -> dict:
         from requests import RequestException
@@ -216,21 +217,24 @@ class BigQueryExport:
                 ),
             ),
         )
-        try:
-            session = self._read.create_read_session(
-                parent=f"projects/{self._project}", read_session=session, max_stream_count=1
-            )
-        except GoogleAPICallError as exc:
-            raise LoadError(
-                f"ga4: BigQuery refused a read session in project {self._project} as "
-                f"{self.account} ({exc.code}: {exc.message})."
-            ) from None
-        if not session.streams:
-            return pa.table({})
-        try:
-            return self._read.read_rows(session.streams[0].name).to_arrow(session)
-        except GoogleAPICallError as exc:
-            raise LoadError(
-                f"ga4: reading events_{day} failed ({exc.code}: {exc.message}); run again "
-                "to resume from this day."
-            ) from None
+        # A client reused over many days read them slower and slower (2 s a day
+        # at first, 8 s by the twelfth); google-cloud-bigquery opens one per read too.
+        with self._read_client() as client:
+            try:
+                session = client.create_read_session(
+                    parent=f"projects/{self._project}", read_session=session, max_stream_count=1
+                )
+            except GoogleAPICallError as exc:
+                raise LoadError(
+                    f"ga4: BigQuery refused a read session in project {self._project} as "
+                    f"{self.account} ({exc.code}: {exc.message})."
+                ) from None
+            if not session.streams:
+                return pa.table({})
+            try:
+                return client.read_rows(session.streams[0].name).to_arrow(session)
+            except GoogleAPICallError as exc:
+                raise LoadError(
+                    f"ga4: reading events_{day} failed ({exc.code}: {exc.message}); run again "
+                    "to resume from this day."
+                ) from None
