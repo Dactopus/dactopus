@@ -205,8 +205,9 @@ class BigQueryExport:
         from google.api_core.exceptions import GoogleAPICallError
         from google.cloud.bigquery_storage import types
 
-        # Uncompressed, a day of the sample read four to ten times slower over
-        # the network; google-cloud-bigquery asks for LZ4 too.
+        # Uncompressed, a day of the sample read in 9 to 32 s, with LZ4 in 1.5 to
+        # 2.7 s; google-cloud-bigquery asks for LZ4 too (bigquery-storage 2.43.0,
+        # 2026-10-21).
         session = types.ReadSession(
             table=(f"projects/{self._source_project}/datasets/{self._dataset}/tables/events_{day}"),
             data_format=types.DataFormat.ARROW,
@@ -218,7 +219,8 @@ class BigQueryExport:
             ),
         )
         # A client reused over many days read them slower and slower (2 s a day
-        # at first, 8 s by the twelfth); google-cloud-bigquery opens one per read too.
+        # at first, 8 s by the twelfth); google-cloud-bigquery opens one per read
+        # too (bigquery-storage 2.43.0, 2026-10-21).
         with self._read_client() as client:
             try:
                 session = client.create_read_session(
@@ -232,7 +234,8 @@ class BigQueryExport:
             if not session.streams:
                 return pa.table({})
             # Decoded here: the stream's own to_arrow is deprecated in favour of
-            # pandas-gbq, which brings pandas and google-cloud-bigquery.
+            # pandas-gbq, which brings pandas and google-cloud-bigquery (since
+            # bigquery-storage 2.40.0). A message may carry no rows.
             schema = pa.ipc.read_schema(pa.py_buffer(session.arrow_schema.serialized_schema))
             try:
                 batches = [
@@ -240,6 +243,7 @@ class BigQueryExport:
                         pa.py_buffer(message.arrow_record_batch.serialized_record_batch), schema
                     )
                     for message in client.read_rows(session.streams[0].name)
+                    if message.arrow_record_batch.serialized_record_batch
                 ]
             except GoogleAPICallError as exc:
                 raise LoadError(

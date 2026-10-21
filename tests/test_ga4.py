@@ -87,17 +87,35 @@ class FakeReadClient:
 
         class Gapic:
             def read_rows(self, read_stream, offset, **kwargs):
-                return iter(
-                    types.ReadRowsResponse(
+                # A message may carry no rows, only the stream's statistics.
+                yield types.ReadRowsResponse(row_count=0)
+                for batch in batches:
+                    yield types.ReadRowsResponse(
                         row_count=1,
                         arrow_record_batch=types.ArrowRecordBatch(
                             serialized_record_batch=batch.serialize().to_pybytes()
                         ),
                     )
-                    for batch in batches
-                )
 
         return reader.ReadRowsStream(Gapic(), name, 0, {})
+
+
+def _bigquery_export(table: pa.Table) -> tuple[ga4.BigQueryExport, list[FakeReadClient]]:
+    """A BigQueryExport over a fake Storage Read API, and the clients it opened."""
+    export = object.__new__(ga4.BigQueryExport)
+    export._project, export._source_project, export._dataset = "p", "src", "ds"
+    export.account = "a test account"
+    clients: list[FakeReadClient] = []
+
+    def new_client():
+        clients.append(FakeReadClient(table))
+        return clients[-1]
+
+    export._read_client = new_client
+    return export, clients
+
+
+COLUMNS = ["event_date", "event_name", "event_params", "ecommerce"]
 
 
 # The stream's own to_arrow warns that it is deprecated; the export decodes the rows itself.
@@ -105,15 +123,10 @@ class FakeReadClient:
 def test_export_reads_each_day_compressed_with_a_client_of_its_own():
     rows = [_event("20201101", "page_view", "a"), _event("20201101", "purchase", "b", 25.5)]
     table = pa.Table.from_pylist(rows, schema=SCHEMA)
-    export = object.__new__(ga4.BigQueryExport)
-    export._project, export._source_project, export._dataset = "p", "src", "ds"
-    export.account = "a test account"
-    clients: list[FakeReadClient] = []
-    export._read_client = lambda: clients.append(FakeReadClient(table)) or clients[-1]
+    export, clients = _bigquery_export(table)
 
-    columns = ["event_date", "event_name", "event_params", "ecommerce"]
     for day in ["20201101", "20201102"]:
-        assert export.read(day, columns).equals(table.select(columns))
+        assert export.read(day, COLUMNS).equals(table.select(COLUMNS))
     assert len(clients) == 2 and not any(client.open for client in clients)
     for client in clients:
         (request,) = client.requests
@@ -121,6 +134,12 @@ def test_export_reads_each_day_compressed_with_a_client_of_its_own():
             request.read_options.arrow_serialization_options.buffer_compression
             == types.ArrowSerializationOptions.CompressionCodec.LZ4_FRAME
         )
+
+
+def test_export_reads_a_stream_without_rows_as_an_empty_day():
+    export, _ = _bigquery_export(pa.Table.from_pylist([], schema=SCHEMA))
+    rows = export.read("20201101", COLUMNS)
+    assert rows.num_rows == 0 and rows.column_names == COLUMNS
 
 
 def _events(client, database):
