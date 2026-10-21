@@ -1,0 +1,190 @@
+"""Loading the GA4 BigQuery export into the GA4 package's input table."""
+
+from __future__ import annotations
+
+import re
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Protocol
+
+import pyarrow as pa
+import yaml
+from clickhouse_connect.driver.client import Client
+
+from .config import GA4
+
+TABLE = "events"
+_DAILY = re.compile(r"events_(\d{8})")
+_SCOPES = ["https://www.googleapis.com/auth/bigquery"]
+_API = "https://bigquery.googleapis.com/bigquery/v2"
+
+
+class LoadError(Exception):
+    """A load cannot go on; the message says which step and what to do."""
+
+
+class Export(Protocol):
+    """The daily tables of a GA4 export."""
+
+    def days(self) -> list[str]:
+        """The dates (YYYYMMDD) of the daily tables, in order."""
+
+    def columns(self, day: str) -> set[str]:
+        """The top-level columns of a daily table."""
+
+    def read(self, day: str, columns: list[str]) -> pa.Table:
+        """The rows of a daily table, with the given top-level columns."""
+
+
+def lookback_days(package: GA4, library: Path) -> int:
+    """ga4_lookback_days from the configuration, else the package's default."""
+    if "ga4_lookback_days" in package.vars:
+        return int(package.vars["ga4_lookback_days"])
+    project = yaml.safe_load((library / "sources/ga4/dbt_project.yml").read_text())
+    return int(project["vars"]["ga4_lookback_days"])
+
+
+def load(client: Client, export: Export, database: str, lookback: int) -> int:
+    """Load the days not yet loaded and reread the last lookback days.
+
+    A reread day replaces what the input holds for it; the days go in
+    order, so a load stopped halfway is picked up by the next one.
+    Returns the number of rows inserted.
+    """
+    # query, not command: command parses the result, and 20201101 would become a number.
+    latest = client.query(f"SELECT max(event_date) FROM `{database}`.`{TABLE}`").result_rows[0][0]
+    days = export.days()
+    if latest:
+        start = date.fromisoformat(latest) - timedelta(days=lookback)
+        days = [day for day in days if date.fromisoformat(day) >= start]
+    wanted = [
+        row[0]
+        for row in client.query(
+            "SELECT name FROM system.columns WHERE database = {db:String} AND table = {t:String}"
+            " ORDER BY position",
+            parameters={"db": database, "t": TABLE},
+        ).result_rows
+    ]
+    inserted = 0
+    absent_reported: set[str] = set()
+    for day in days:
+        available = export.columns(day)
+        columns = [name for name in wanted if name in available]
+        absent = set(wanted) - available - absent_reported
+        if absent:
+            # Older exports lack session_traffic_source_last_click, for one.
+            print(
+                f"ga4: the export has no {', '.join(sorted(absent))} from {day}; "
+                "the input gets the column's default (NULL).",
+                file=sys.stderr,
+            )
+            absent_reported |= absent
+        rows = export.read(day, columns)
+        client.command(
+            f"DELETE FROM `{database}`.`{TABLE}` WHERE event_date = {{day:String}}",
+            parameters={"day": day},
+        )
+        if rows.num_rows:
+            client.insert_arrow(TABLE, rows, database=database)
+        inserted += rows.num_rows
+        print(f"ga4: {day}: {rows.num_rows} rows", file=sys.stderr)
+    return inserted
+
+
+class BigQueryExport:
+    """A GA4 export in BigQuery, read with the Storage Read API.
+
+    The read sessions run in the configured project, which pays for them.
+    """
+
+    def __init__(self, package: GA4):
+        import google.auth
+        from google.auth.exceptions import DefaultCredentialsError
+        from google.auth.transport.requests import AuthorizedSession
+        from google.cloud.bigquery_storage import BigQueryReadClient
+        from google.oauth2 import service_account
+
+        if package.credentials_file is not None:
+            try:
+                credentials = service_account.Credentials.from_service_account_file(
+                    str(package.credentials_file), scopes=_SCOPES
+                )
+            except (OSError, ValueError) as exc:
+                raise LoadError(
+                    f"ga4: cannot read the service account key "
+                    f"packages.ga4.credentials_file ({package.credentials_file}): {exc}"
+                ) from None
+        else:
+            try:
+                credentials, _ = google.auth.default(scopes=_SCOPES)
+            except DefaultCredentialsError:
+                raise LoadError(
+                    "ga4: no Google credentials. Run `gcloud auth application-default "
+                    "login`, or name a service account key in packages.ga4.credentials_file."
+                ) from None
+        self._project = package.project
+        self._source_project, self._dataset = package.dataset.split(".")
+        self._rest = AuthorizedSession(credentials)
+        self._read = BigQueryReadClient(credentials=credentials)
+
+    def _get(self, path: str, **params: str) -> dict:
+        url = f"{_API}/projects/{self._source_project}/datasets/{self._dataset}{path}"
+        response = self._rest.get(url, params=params, timeout=60)
+        if not response.ok:
+            try:
+                reason = response.json()["error"]["message"]
+            except (ValueError, KeyError, TypeError):
+                reason = response.reason
+            raise LoadError(
+                f"ga4: BigQuery refused to read {self._source_project}.{self._dataset} "
+                f"({response.status_code}: {reason}). Check packages.ga4.dataset and "
+                "that the account may read it."
+            )
+        return response.json()
+
+    def days(self) -> list[str]:
+        days, token = [], None
+        while True:
+            paging = {"pageToken": token} if token else {}
+            page = self._get("/tables", maxResults="1000", **paging)
+            for table in page.get("tables", []):
+                match = _DAILY.fullmatch(table["tableReference"]["tableId"])
+                if match:
+                    days.append(match.group(1))
+            token = page.get("nextPageToken")
+            if not token:
+                return sorted(days)
+
+    def columns(self, day: str) -> set[str]:
+        table = self._get(f"/tables/events_{day}", fields="schema/fields/name")
+        return {field["name"] for field in table["schema"]["fields"]}
+
+    def read(self, day: str, columns: list[str]) -> pa.Table:
+        from google.api_core.exceptions import GoogleAPICallError
+        from google.cloud.bigquery_storage import types
+
+        session = types.ReadSession(
+            table=(f"projects/{self._source_project}/datasets/{self._dataset}/tables/events_{day}"),
+            data_format=types.DataFormat.ARROW,
+            read_options=types.ReadSession.TableReadOptions(selected_fields=columns),
+        )
+        try:
+            session = self._read.create_read_session(
+                parent=f"projects/{self._project}", read_session=session, max_stream_count=1
+            )
+        except GoogleAPICallError as exc:
+            raise LoadError(
+                f"ga4: BigQuery refused a read session in project {self._project} "
+                f"({exc.code}: {exc.message}). Check packages.ga4.project and that the "
+                "account may create read sessions in it."
+            ) from None
+        if not session.streams:
+            return pa.table({})
+        try:
+            return self._read.read_rows(session.streams[0].name).to_arrow(session)
+        except GoogleAPICallError as exc:
+            raise LoadError(
+                f"ga4: reading events_{day} failed ({exc.code}: {exc.message}); run again "
+                "to resume from this day."
+            ) from None

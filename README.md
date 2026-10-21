@@ -9,8 +9,8 @@ ClickHouse, builds the canonical e-commerce tables, checks them, and
 serves their [Apache Ossie](https://github.com/apache/ossie) models to AI
 agents over [MCP](https://modelcontextprotocol.io).
 
-Under construction: nothing is released and the commands do not do their
-work yet.
+Under construction: nothing is released. `init` and `run` work; checks,
+the report and `serve` do not yet.
 
 ## How the parts fit
 
@@ -35,7 +35,29 @@ The executor knows nothing of Dactopus.
 
 One configuration file describes an installation: the ClickHouse
 connection, the databases for raw input and canonical tables, the version
-of the models library, and the packages to run.
+of the models library, and the packages to run. `dactopus init` writes it
+with a comment on every field. Secrets stay out of it: the file names the
+environment variables that hold them.
+
+`dactopus run` loads each source into its package's input tables, then
+runs `dbt build` of each package. A load reads only what changed:
+
+| Source | Read from | Next load |
+| --- | --- | --- |
+| GA4 | The daily `events_YYYYMMDD` tables of the BigQuery export, with the Storage Read API | The days from the latest loaded one minus `ga4_lookback_days`, which replace what was loaded for them |
+| Shopify | Orders with their lines, shipping and refunds, 25 per page, from the GraphQL Admin API | The orders updated from an hour before the latest loaded change, appended |
+
+GA4 reads need Google credentials: a service account key named in the
+file, or Application Default Credentials (`gcloud auth
+application-default login`). The read sessions run in the configured
+project, which pays for them. Shopify needs an app with `read_orders`,
+installed on the store, and its client id and secret; without
+`read_all_orders` Shopify returns the last 60 days of orders only.
+
+The runner writes the dbt profile the packages name (`profile: dactopus`)
+from the configuration, without the password, which dbt reads from the
+environment. The profile and dbt's output go to `.dactopus/` next to the
+configuration file.
 
 ## Development
 
