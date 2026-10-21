@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from datetime import date, timedelta
@@ -92,37 +93,65 @@ def load(client: Client, export: Export, database: str, lookback: int) -> int:
     return inserted
 
 
+def credentials_for(package: GA4, environ: dict[str, str] | None = None):
+    """The Google credentials of a load and who they are, in words.
+
+    A key named in the configuration wins; otherwise Application Default
+    Credentials, where GOOGLE_APPLICATION_CREDENTIALS wins over the gcloud
+    login. A gcloud login has the configured project pay for the reads.
+    """
+    import google.auth
+    from google.auth.exceptions import DefaultCredentialsError
+    from google.oauth2 import credentials as user_credentials
+    from google.oauth2 import service_account
+
+    environ = os.environ if environ is None else environ
+    if package.credentials_file is not None:
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                str(package.credentials_file), scopes=_SCOPES
+            )
+        except (OSError, ValueError) as exc:
+            raise LoadError(
+                f"ga4: cannot read the service account key "
+                f"packages.ga4.credentials_file ({package.credentials_file}): {exc}"
+            ) from None
+        return credentials, (
+            f"service account {credentials.service_account_email} "
+            "from packages.ga4.credentials_file"
+        )
+    try:
+        credentials, _ = google.auth.default(scopes=_SCOPES)
+    except DefaultCredentialsError:
+        raise LoadError(
+            "ga4: no Google credentials. Run `gcloud auth application-default "
+            "login`, or name a service account key in packages.ga4.credentials_file."
+        ) from None
+    if isinstance(credentials, user_credentials.Credentials):
+        return credentials.with_quota_project(package.project), (
+            "the gcloud application-default login"
+        )
+    email = getattr(credentials, "service_account_email", "an unnamed account")
+    if environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        return credentials, (
+            f"service account {email} from GOOGLE_APPLICATION_CREDENTIALS; unset it "
+            "to use the gcloud login, or name a key in packages.ga4.credentials_file"
+        )
+    return credentials, f"{email}, the default credentials of this machine"
+
+
 class BigQueryExport:
     """A GA4 export in BigQuery, read with the Storage Read API.
 
     The read sessions run in the configured project, which pays for them.
     """
 
-    def __init__(self, package: GA4):
-        import google.auth
-        from google.auth.exceptions import DefaultCredentialsError
+    def __init__(self, package: GA4, environ: dict[str, str] | None = None):
         from google.auth.transport.requests import AuthorizedSession
         from google.cloud.bigquery_storage import BigQueryReadClient
-        from google.oauth2 import service_account
 
-        if package.credentials_file is not None:
-            try:
-                credentials = service_account.Credentials.from_service_account_file(
-                    str(package.credentials_file), scopes=_SCOPES
-                )
-            except (OSError, ValueError) as exc:
-                raise LoadError(
-                    f"ga4: cannot read the service account key "
-                    f"packages.ga4.credentials_file ({package.credentials_file}): {exc}"
-                ) from None
-        else:
-            try:
-                credentials, _ = google.auth.default(scopes=_SCOPES)
-            except DefaultCredentialsError:
-                raise LoadError(
-                    "ga4: no Google credentials. Run `gcloud auth application-default "
-                    "login`, or name a service account key in packages.ga4.credentials_file."
-                ) from None
+        credentials, self.account = credentials_for(package, environ)
+        print(f"ga4: reading as {self.account}", file=sys.stderr)
         self._project = package.project
         self._source_project, self._dataset = package.dataset.split(".")
         self._rest = AuthorizedSession(credentials)
@@ -138,8 +167,7 @@ class BigQueryExport:
                 reason = response.reason
             raise LoadError(
                 f"ga4: BigQuery refused to read {self._source_project}.{self._dataset} "
-                f"({response.status_code}: {reason}). Check packages.ga4.dataset and "
-                "that the account may read it."
+                f"as {self.account} ({response.status_code}: {reason})."
             )
         return response.json()
 
@@ -175,9 +203,8 @@ class BigQueryExport:
             )
         except GoogleAPICallError as exc:
             raise LoadError(
-                f"ga4: BigQuery refused a read session in project {self._project} "
-                f"({exc.code}: {exc.message}). Check packages.ga4.project and that the "
-                "account may create read sessions in it."
+                f"ga4: BigQuery refused a read session in project {self._project} as "
+                f"{self.account} ({exc.code}: {exc.message})."
             ) from None
         if not session.streams:
             return pa.table({})
