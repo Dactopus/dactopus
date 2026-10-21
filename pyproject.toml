@@ -1,0 +1,49 @@
+[project]
+name = "dactopus"
+version = "0.0.0"
+description = "Runner of Dactopus: loads sources into ClickHouse, builds the canonical tables, runs checks, serves the models over MCP"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Alex Kosachev" }]
+requires-python = ">=3.11"
+keywords = ["clickhouse", "ecommerce", "ga4", "shopify", "mcp"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+]
+# Dependencies arrive with the code that needs them.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Dactopus/dactopus"
+Issues = "https://github.com/Dactopus/dactopus/issues"
+
+[project.scripts]
+dactopus = "dactopus.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dactopus"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs a reachable ClickHouse (skipped otherwise)"]
