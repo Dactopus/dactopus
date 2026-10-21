@@ -204,10 +204,17 @@ class BigQueryExport:
         from google.api_core.exceptions import GoogleAPICallError
         from google.cloud.bigquery_storage import types
 
+        # Uncompressed, a day of the sample read four to ten times slower over
+        # the network; google-cloud-bigquery asks for LZ4 too.
         session = types.ReadSession(
             table=(f"projects/{self._source_project}/datasets/{self._dataset}/tables/events_{day}"),
             data_format=types.DataFormat.ARROW,
-            read_options=types.ReadSession.TableReadOptions(selected_fields=columns),
+            read_options=types.ReadSession.TableReadOptions(
+                selected_fields=columns,
+                arrow_serialization_options=types.ArrowSerializationOptions(
+                    buffer_compression=types.ArrowSerializationOptions.CompressionCodec.LZ4_FRAME
+                ),
+            ),
         )
         try:
             session = self._read.create_read_session(
