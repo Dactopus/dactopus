@@ -8,3 +8,7 @@ __pycache__/
 .ruff_cache/
 dist/
 .coverage
+
+# Local installations and their output
+/dactopus.yaml
+.dactopus/
