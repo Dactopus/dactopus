@@ -10,10 +10,13 @@ from dactopus import clickhouse as ch
 from dactopus import shopify
 from dactopus.config import Shopify
 
-# Pages of the GraphQL Admin API (2026-10) answering shopify.QUERY, recorded
-# from the development store on 2026-10-21: seven of its orders, one email
-# replaced. Partial and whole refunds, a cancellation, taxes included, a
-# custom item, a gift card, a tip refunded without lines, import duties.
+# Pages answering shopify.QUERY: seven orders of the development store,
+# recorded on 2026-10-21 through the Shopify connector in Claude, whose API
+# version is older than 2026-10. Two edits: one email replaced, and #1004's
+# displayFulfillmentStatus set to what 2026-10 returns for it,
+# FULFILLMENT_NOT_REQUIRED (a live load on the same day). The rest equals
+# that live load. Partial and whole refunds, a cancellation, taxes included,
+# a custom item, a gift card, a tip refunded without lines, import duties.
 PAGES = json.loads((Path(__file__).parent / "fixtures/shopify_orders.json").read_text())
 
 
