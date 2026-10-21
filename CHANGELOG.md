@@ -20,7 +20,9 @@ a minor release may change the command line and the configuration file.
   `~/.cache/dactopus/`.
 - `dactopus run` loads GA4 and Shopify and builds their packages. GA4: the
   daily tables of the BigQuery export through the Storage Read API, the
-  last `ga4_lookback_days` reread and replaced on every run. Shopify:
+  last `ga4_lookback_days` reread and replaced on every run, as the
+  Google account the load names; a gcloud login bills the reads to the
+  configured project. Shopify:
   orders with lines, shipping and refunds from the GraphQL Admin API
   (2026-10), from an hour before the latest loaded change, with a token
   from the app's client credentials. Each package is built with

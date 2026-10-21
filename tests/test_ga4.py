@@ -120,3 +120,27 @@ def test_lookback_from_configuration_or_package(tmp_path):
     assert ga4.lookback_days(configured, tmp_path) == 5
     default = GA4(project="p", dataset="a.b", credentials_file=None, vars={})
     assert ga4.lookback_days(default, tmp_path) == 3
+
+
+def test_gcloud_login_has_the_configured_project_pay(monkeypatch):
+    import google.auth
+    from google.oauth2.credentials import Credentials
+
+    monkeypatch.setattr(google.auth, "default", lambda scopes: (Credentials("t"), None))
+    package = GA4(project="dactopus-ga4-sample", dataset="a.b", credentials_file=None, vars={})
+    credentials, account = ga4.credentials_for(package, environ={})
+    assert credentials.quota_project_id == "dactopus-ga4-sample"
+    assert account == "the gcloud application-default login"
+
+
+def test_key_from_the_environment_is_named(monkeypatch):
+    import google.auth
+
+    class Key:
+        service_account_email = "reader@other-project.iam.gserviceaccount.com"
+
+    monkeypatch.setattr(google.auth, "default", lambda scopes: (Key(), "other-project"))
+    package = GA4(project="p", dataset="a.b", credentials_file=None, vars={})
+    _, account = ga4.credentials_for(package, environ={"GOOGLE_APPLICATION_CREDENTIALS": "k"})
+    assert "reader@other-project" in account
+    assert "from GOOGLE_APPLICATION_CREDENTIALS; unset it" in account
