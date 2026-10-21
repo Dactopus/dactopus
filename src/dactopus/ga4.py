@@ -41,7 +41,12 @@ class Export(Protocol):
 def lookback_days(package: GA4, library: Path) -> int:
     """ga4_lookback_days from the configuration, else the package's default."""
     if "ga4_lookback_days" in package.vars:
-        return int(package.vars["ga4_lookback_days"])
+        try:
+            return int(package.vars["ga4_lookback_days"])
+        except (TypeError, ValueError):
+            raise LoadError(
+                "ga4: packages.ga4.vars.ga4_lookback_days: expected a whole number of days."
+            ) from None
     project = yaml.safe_load((library / "sources/ga4/dbt_project.yml").read_text())
     return int(project["vars"]["ga4_lookback_days"])
 
@@ -158,8 +163,15 @@ class BigQueryExport:
         self._read = BigQueryReadClient(credentials=credentials)
 
     def _get(self, path: str, **params: str) -> dict:
+        from requests import RequestException
+
         url = f"{_API}/projects/{self._source_project}/datasets/{self._dataset}{path}"
-        response = self._rest.get(url, params=params, timeout=60)
+        try:
+            response = self._rest.get(url, params=params, timeout=60)
+        except RequestException as exc:
+            raise LoadError(
+                f"ga4: cannot reach BigQuery ({exc}); check the network and run again."
+            ) from None
         if not response.ok:
             try:
                 reason = response.json()["error"]["message"]

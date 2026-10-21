@@ -46,7 +46,8 @@ def write_profile(config: Config, project: Path) -> Path:
                     "port": ch.port,
                     "secure": ch.secure,
                     "user": ch.user,
-                    "password": "{{ env_var('CLICKHOUSE_PASSWORD', '') }}",
+                    # dbt scrubs DBT_ENV_SECRET_ values from its logs.
+                    "password": "{{ env_var('DBT_ENV_SECRET_CLICKHOUSE_PASSWORD', '') }}",
                     # The database the canonical tables are written to.
                     "schema": ch.database,
                 }
@@ -81,7 +82,7 @@ def command(config: Config, library: Path, package: str) -> tuple[list[str], dic
     ]
     env = {
         **os.environ,
-        "CLICKHOUSE_PASSWORD": config.clickhouse.password,
+        "DBT_ENV_SECRET_CLICKHOUSE_PASSWORD": config.clickhouse.password,
         # No events about the client's runs go to dbt Labs, and dbt writes no
         # .user.yml next to the profile.
         "DBT_SEND_ANONYMOUS_USAGE_STATS": "false",

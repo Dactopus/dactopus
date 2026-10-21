@@ -72,8 +72,12 @@ def resolve(models: Models, cache: Path | None = None, fetch: Fetch = _download)
 
 def _extract(archive: bytes, into: Path) -> Path:
     """Extract a GitHub archive and return its single top directory."""
-    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
+    try:
+        tar = tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz")
         members = tar.getmembers()
+    except (tarfile.TarError, OSError, EOFError):
+        raise LibraryError("The models archive is not a readable .tar.gz; run again.") from None
+    with tar:
         for member in members:
             target = (into / member.name).resolve()
             if not target.is_relative_to(into.resolve()) or not (member.isfile() or member.isdir()):

@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import yaml
 
@@ -153,6 +153,10 @@ def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
         )
     if not url.hostname:
         raise ConfigError("clickhouse.url: no host.")
+    try:
+        port = url.port
+    except ValueError:
+        raise ConfigError("clickhouse.url: the port is not a number from 1 to 65535.") from None
     password = ""
     if "password_env" in section:
         name = _text(section, "password_env", "clickhouse")
@@ -172,8 +176,8 @@ def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
     return ClickHouse(
         host=url.hostname,
         # The default ports of the ClickHouse HTTP interface, plain and TLS.
-        port=url.port or (8443 if url.scheme == "https" else 8123),
-        user=url.username or "default",
+        port=port or (8443 if url.scheme == "https" else 8123),
+        user=unquote(url.username) if url.username else "default",
         password=password,
         input_database=input_database,
         database=database,

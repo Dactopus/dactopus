@@ -59,3 +59,8 @@ def test_archive_without_sources_is_refused(tmp_path):
     archive = _archive({"top/README.md": b""})
     with pytest.raises(LibraryError, match="no sources"):
         library.resolve(Models("v9.9.9", None), cache=tmp_path, fetch=lambda url: archive)
+
+
+def test_unreadable_archive_is_refused(tmp_path):
+    with pytest.raises(LibraryError, match="not a readable"):
+        library.resolve(Models("v9.9.9", None), cache=tmp_path, fetch=lambda url: b"<html>")

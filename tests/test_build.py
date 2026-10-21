@@ -44,10 +44,10 @@ def test_runner_writes_the_profile_without_the_password(tmp_path):
         "port": 18123,
         "secure": False,
         "user": "loader",
-        "password": "{{ env_var('CLICKHOUSE_PASSWORD', '') }}",
+        "password": "{{ env_var('DBT_ENV_SECRET_CLICKHOUSE_PASSWORD', '') }}",
         "schema": "canonical",
     }
-    assert env["CLICKHOUSE_PASSWORD"] == "s3cret"
+    assert env["DBT_ENV_SECRET_CLICKHOUSE_PASSWORD"] == "s3cret"
 
 
 def test_runner_sets_the_input_database(tmp_path):
