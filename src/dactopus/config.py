@@ -136,12 +136,8 @@ def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
     section = _section(value, "clickhouse", {"url", "password_env", "input_database", "database"})
     url = urlsplit(_text(section, "url", "clickhouse"))
     if url.scheme != "http":
-        # The profile that ships in the packages has no TLS setting:
-        # https://github.com/Dactopus/dactopus-data-models/issues/25
-        raise ConfigError(
-            "clickhouse.url: only http:// is supported for now; dbt cannot reach "
-            "ClickHouse over TLS with the packages' profile."
-        )
+        # TLS is not built yet: the loaders and the dbt profile would both need it.
+        raise ConfigError("clickhouse.url: only http:// is supported for now.")
     if url.password is not None:
         raise ConfigError(
             "clickhouse.url: remove the password from the URL and name the "

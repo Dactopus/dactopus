@@ -18,3 +18,12 @@ a minor release may change the command line and the configuration file.
 - `dactopus init` writes a commented sample configuration.
 - A release of the models library is downloaded once from GitHub into
   `~/.cache/dactopus/`.
+- `dactopus run` loads GA4 and Shopify and builds their packages. GA4: the
+  daily tables of the BigQuery export through the Storage Read API, the
+  last `ga4_lookback_days` reread and replaced on every run. Shopify:
+  orders with lines, shipping and refunds from the GraphQL Admin API
+  (2026-10), from an hour before the latest loaded change, with a token
+  from the app's client credentials. Each package is built with
+  `dbt build` and a dbt profile the runner writes, not the one in the
+  package; the profile and dbt's output go to `.dactopus/` next to the
+  configuration.

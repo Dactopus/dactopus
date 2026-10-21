@@ -99,9 +99,11 @@ Python 3.11+, managed with uv. The parts that constrain code:
   columns by field name and drops struct fields the table lacks.
 - **google-cloud-bigquery-storage** for GA4: the Storage Read API returns
   Arrow, selects columns and filters rows, and reads tables only, not
-  views.
-- The Shopify client is the standard library (`urllib`), as in the
-  library's README recipe. No dlt: its Shopify source uses the legacy
+  views. The daily tables are listed with one BigQuery REST call
+  (`tables.list`) through `google-auth`, which comes with it; no
+  `google-cloud-bigquery`.
+- The Shopify client is the standard library (`urllib`) with `certifi`
+  for root certificates, as in the library's README recipe. No dlt: its Shopify source uses the legacy
   REST Admin API.
 - No ClickHouse binaries on the runner's machine: `clickhouse local` and
   `clickhouse client` in the library's recipes are replaced by Python.
@@ -110,10 +112,9 @@ The models library is not a Python package. The configuration names a
 version (`models.version`: a release tag, fetched as the GitHub archive
 of the tag into `~/.cache/dactopus/`, no git needed) or a path
 (`models.path`, for development). Packages run one at a time with
-`dbt build --project-dir <library>/sources/<package>`, with the profile
-that ships in the package; the runner sets its environment variables
-from the configuration. Packages do not depend on each other; no root
-dbt project is generated.
+`dbt build --project-dir <library>/sources/<package>`, with a profile
+the runner writes; the package names it (`profile: dactopus`). Packages
+do not depend on each other; no root dbt project is generated.
 
 ## Architecture rules
 
