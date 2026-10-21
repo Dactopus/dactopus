@@ -2,6 +2,7 @@ import io
 import json
 import re
 import sys
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -121,3 +122,14 @@ def test_missing_app_secret_is_named():
     package = Shopify(shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET", vars={})
     with pytest.raises(shopify.LoadError, match="SECRET is not set"):
         shopify.access_token(package, environ={"ID": "x"})
+
+
+def test_unreachable_store_says_run_again(monkeypatch):
+    def offline(url, data, headers):
+        raise urllib.error.URLError("nodename nor servname provided")
+
+    monkeypatch.setattr(shopify, "_post", offline)
+    with pytest.raises(
+        shopify.LoadError, match="cannot reach dactopus-dev.myshopify.com.*run again"
+    ):
+        shopify.graphql("dactopus-dev", "token")({"cursor": None, "filter": ""})

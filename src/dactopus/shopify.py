@@ -7,6 +7,7 @@ loads. Bulk operations cannot read refund lines, so orders come in pages.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import ssl
@@ -64,6 +65,7 @@ class LoadError(Exception):
     """A load cannot go on; the message says which step and what to do."""
 
 
+@functools.cache
 def _tls() -> ssl.SSLContext:
     # Python from python.org on macOS does not see the system's root certificates.
     return ssl.create_default_context(cafile=certifi.where())
@@ -98,7 +100,17 @@ def access_token(package: Shopify, environ: dict[str, str] | None = None) -> str
             f"shopify: {package.shop}.myshopify.com refused the app's client id and "
             f"secret ({exc.code}): check them and that the app is installed on the store."
         ) from None
+    except OSError as exc:
+        raise LoadError(_unreachable(package.shop, exc)) from None
     return body["access_token"]
+
+
+def _unreachable(shop: str, exc: OSError) -> str:
+    # URLError and timeouts: the network, not the store, failed.
+    reason = getattr(exc, "reason", exc)
+    return (
+        f"shopify: cannot reach {shop}.myshopify.com ({reason}); check the network and run again."
+    )
 
 
 def graphql(shop: str, token: str) -> Fetch:
@@ -116,6 +128,8 @@ def graphql(shop: str, token: str) -> Fetch:
                     f"shopify: the Admin API of {shop}.myshopify.com answered {exc.code}; "
                     "check that the app has read_orders. Run again to resume."
                 ) from None
+            except OSError as exc:
+                raise LoadError(_unreachable(shop, exc)) from None
             errors = body.get("errors", [])
             if any(e.get("extensions", {}).get("code") == "THROTTLED" for e in errors):
                 time.sleep(2)

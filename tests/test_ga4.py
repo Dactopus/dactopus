@@ -120,6 +120,9 @@ def test_lookback_from_configuration_or_package(tmp_path):
     assert ga4.lookback_days(configured, tmp_path) == 5
     default = GA4(project="p", dataset="a.b", credentials_file=None, vars={})
     assert ga4.lookback_days(default, tmp_path) == 3
+    wrong = GA4(project="p", dataset="a.b", credentials_file=None, vars={"ga4_lookback_days": "x"})
+    with pytest.raises(ga4.LoadError, match="whole number of days"):
+        ga4.lookback_days(wrong, tmp_path)
 
 
 def test_gcloud_login_has_the_configured_project_pay(monkeypatch):

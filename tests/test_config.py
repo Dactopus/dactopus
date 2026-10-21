@@ -71,6 +71,12 @@ def test_https_turns_on_tls(tmp_path, url, port, secure):
     assert (ch.port, ch.secure) == (port, secure)
 
 
+def test_user_name_is_percent_decoded(tmp_path):
+    data = _base()
+    data["clickhouse"]["url"] = "https://analyst%40corp@db.local"
+    assert config.load(_write(tmp_path, data), environ={}).clickhouse.user == "analyst@corp"
+
+
 def test_missing_password_variable_is_named(tmp_path):
     data = _base()
     data["clickhouse"]["password_env"] = "CH_PASSWORD"
@@ -84,6 +90,8 @@ def test_missing_password_variable_is_named(tmp_path):
         ("ftp://db.local:8443", "expected http:// or https://"),
         ("http://user:pw@db.local:8123", "remove the password"),
         ("http://db.local:8123/dactopus", "only the user, host and port"),
+        ("http://db.local:84433", "the port is not a number"),
+        ("http://db.local:abc", "the port is not a number"),
     ],
 )
 def test_url_is_refused(tmp_path, url, message):

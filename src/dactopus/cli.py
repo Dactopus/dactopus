@@ -51,7 +51,6 @@ def _run(args: argparse.Namespace) -> int:
     if cfg.shopify is not None:
         token = shopify.access_token(cfg.shopify)
         shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
-    cfg.workdir.mkdir(exist_ok=True)
     for package in cfg.packages():
         build.build(cfg, root, package)
     return 0
