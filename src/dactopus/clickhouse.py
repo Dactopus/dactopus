@@ -19,6 +19,7 @@ def connect(settings: ClickHouse) -> Client:
         port=settings.port,
         username=settings.user,
         password=settings.password,
+        secure=settings.secure,
     )
 
 

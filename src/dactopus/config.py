@@ -36,6 +36,8 @@ class ClickHouse:
     password: str = field(repr=False)
     input_database: str
     database: str
+    # TLS, from an https:// URL.
+    secure: bool = False
 
 
 @dataclass(frozen=True)
@@ -135,9 +137,10 @@ def _database(section: dict[str, Any], key: str) -> str:
 def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
     section = _section(value, "clickhouse", {"url", "password_env", "input_database", "database"})
     url = urlsplit(_text(section, "url", "clickhouse"))
-    if url.scheme != "http":
-        # TLS is not built yet: the loaders and the dbt profile would both need it.
-        raise ConfigError("clickhouse.url: only http:// is supported for now.")
+    if url.scheme not in ("http", "https"):
+        raise ConfigError(
+            f"clickhouse.url: expected http:// or https://, got {url.scheme or 'no'} scheme."
+        )
     if url.password is not None:
         raise ConfigError(
             "clickhouse.url: remove the password from the URL and name the "
@@ -168,11 +171,13 @@ def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
         )
     return ClickHouse(
         host=url.hostname,
-        port=url.port or 8123,
+        # The default ports of the ClickHouse HTTP interface, plain and TLS.
+        port=url.port or (8443 if url.scheme == "https" else 8123),
         user=url.username or "default",
         password=password,
         input_database=input_database,
         database=database,
+        secure=url.scheme == "https",
     )
 
 
@@ -242,7 +247,8 @@ SAMPLE = """\
 # name the environment variables or files that hold them.
 
 clickhouse:
-  # User, host and port of the ClickHouse HTTP interface. http only for now.
+  # User, host and port of the ClickHouse HTTP interface; https:// for TLS
+  # (ClickHouse Cloud: https://default@<host>:8443).
   url: http://default@127.0.0.1:8123
   # The environment variable with the user's password; leave it out for none.
   # password_env: CLICKHOUSE_PASSWORD
