@@ -1,0 +1,10 @@
+CLAUDE.local.md
+.claude/
+.DS_Store
+.knowledge_private/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+.coverage
