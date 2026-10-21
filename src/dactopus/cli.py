@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from clickhouse_connect.driver.exceptions import ClickHouseError
@@ -38,19 +40,43 @@ def _init(args: argparse.Namespace) -> int:
     return 0
 
 
+class StepError(Exception):
+    """ClickHouse refused a step of a command."""
+
+
+@contextmanager
+def _step(name: str, action: str) -> Iterator[None]:
+    """Name the step and the next action when ClickHouse refuses it."""
+    try:
+        yield
+    except ClickHouseError as exc:
+        raise StepError(f"{name}: ClickHouse refused it: {exc}; {action}") from None
+
+
+_AGAIN = "fix the cause and run again; a load resumes where it stopped."
+
+
 def _run(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
     root = library.resolve(cfg.models)
-    client = clickhouse.connect(cfg.clickhouse)
-    database = cfg.clickhouse.input_database
+    ch = cfg.clickhouse
+    with _step(
+        f"connecting to ClickHouse at {ch.host}:{ch.port}",
+        "check clickhouse.url, the password and that the server is running.",
+    ):
+        client = clickhouse.connect(ch)
+    database = ch.input_database
     for package in cfg.packages():
-        clickhouse.create_input(client, root, package, database)
+        with _step(f"{package}: creating the input tables in {database}", _AGAIN):
+            clickhouse.create_input(client, root, package, database)
     if cfg.ga4 is not None:
         export = ga4.BigQueryExport(cfg.ga4)
-        ga4.load(client, export, database, ga4.lookback_days(cfg.ga4, root))
+        with _step(f"ga4: loading into {database}.{ga4.TABLE}", _AGAIN):
+            ga4.load(client, export, database, ga4.lookback_days(cfg.ga4, root))
     if cfg.shopify is not None:
         token = shopify.access_token(cfg.shopify)
-        shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
+        with _step(f"shopify: loading orders into {database}", _AGAIN):
+            shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
     for package in cfg.packages():
         build.build(cfg, root, package)
     return 0
@@ -62,6 +88,7 @@ _FAILURES = (
     ga4.LoadError,
     shopify.LoadError,
     build.BuildError,
+    StepError,
 )
 
 
@@ -74,9 +101,6 @@ def main(argv: list[str] | None = None) -> int:
             return _run(args)
     except _FAILURES as exc:
         print(f"dactopus {args.command}: {exc}", file=sys.stderr)
-        return 1
-    except ClickHouseError as exc:
-        print(f"dactopus {args.command}: ClickHouse: {exc}", file=sys.stderr)
         return 1
     print(f"dactopus {args.command}: not implemented yet", file=sys.stderr)
     return 2
