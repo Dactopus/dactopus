@@ -3,6 +3,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
+from google.cloud.bigquery_storage import types
+from google.cloud.bigquery_storage_v1 import reader
 
 from dactopus import clickhouse as ch
 from dactopus import ga4
@@ -45,6 +47,64 @@ class FakeExport:
     def read(self, day, columns):
         self.reads.append(day)
         return self.tables[day].select(columns)
+
+
+class FakeReadClient:
+    """The Storage Read API over one table: it compresses only when asked, as BigQuery does."""
+
+    def __init__(self, table: pa.Table):
+        self.table = table
+        self.requests: list[types.ReadSession] = []
+
+    def create_read_session(self, parent, read_session, max_stream_count):
+        self.requests.append(read_session)
+        schema = self.table.select(list(read_session.read_options.selected_fields)).schema
+        return types.ReadSession(
+            streams=[types.ReadStream(name="stream-0")],
+            arrow_schema=types.ArrowSchema(serialized_schema=schema.serialize().to_pybytes()),
+        )
+
+    def read_rows(self, name):
+        session = self.requests[-1]
+        codec = session.read_options.arrow_serialization_options.buffer_compression
+        lz4 = codec == types.ArrowSerializationOptions.CompressionCodec.LZ4_FRAME
+        rows = self.table.select(list(session.read_options.selected_fields))
+        sink = pa.BufferOutputStream()
+        options = ipc.IpcWriteOptions(compression="lz4" if lz4 else None)
+        with ipc.new_stream(sink, rows.schema, options=options) as writer:
+            writer.write_table(rows, max_chunksize=1)
+        batches = list(ipc.MessageReader.open_stream(sink.getvalue()))[1:]
+
+        class Gapic:
+            def read_rows(self, read_stream, offset, **kwargs):
+                return iter(
+                    types.ReadRowsResponse(
+                        row_count=1,
+                        arrow_record_batch=types.ArrowRecordBatch(
+                            serialized_record_batch=batch.serialize().to_pybytes()
+                        ),
+                    )
+                    for batch in batches
+                )
+
+        return reader.ReadRowsStream(Gapic(), name, 0, {})
+
+
+def test_export_asks_for_compressed_rows():
+    rows = [_event("20201101", "page_view", "a"), _event("20201101", "purchase", "b", 25.5)]
+    table = pa.Table.from_pylist(rows, schema=SCHEMA)
+    export = object.__new__(ga4.BigQueryExport)
+    export._project, export._source_project, export._dataset = "p", "src", "ds"
+    export.account = "a test account"
+    export._read = FakeReadClient(table)
+
+    columns = ["event_date", "event_name", "event_params", "ecommerce"]
+    assert export.read("20201101", columns).equals(table.select(columns))
+    (request,) = export._read.requests
+    assert (
+        request.read_options.arrow_serialization_options.buffer_compression
+        == types.ArrowSerializationOptions.CompressionCodec.LZ4_FRAME
+    )
 
 
 def _events(client, database):
