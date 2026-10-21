@@ -55,8 +55,17 @@ class FakeReadClient:
     def __init__(self, table: pa.Table):
         self.table = table
         self.requests: list[types.ReadSession] = []
+        self.open = False
+
+    def __enter__(self):
+        self.open = True
+        return self
+
+    def __exit__(self, *exc):
+        self.open = False
 
     def create_read_session(self, parent, read_session, max_stream_count):
+        assert self.open
         self.requests.append(read_session)
         schema = self.table.select(list(read_session.read_options.selected_fields)).schema
         return types.ReadSession(
@@ -65,6 +74,7 @@ class FakeReadClient:
         )
 
     def read_rows(self, name):
+        assert self.open
         session = self.requests[-1]
         codec = session.read_options.arrow_serialization_options.buffer_compression
         lz4 = codec == types.ArrowSerializationOptions.CompressionCodec.LZ4_FRAME
@@ -90,21 +100,25 @@ class FakeReadClient:
         return reader.ReadRowsStream(Gapic(), name, 0, {})
 
 
-def test_export_asks_for_compressed_rows():
+def test_export_reads_each_day_compressed_with_a_client_of_its_own():
     rows = [_event("20201101", "page_view", "a"), _event("20201101", "purchase", "b", 25.5)]
     table = pa.Table.from_pylist(rows, schema=SCHEMA)
     export = object.__new__(ga4.BigQueryExport)
     export._project, export._source_project, export._dataset = "p", "src", "ds"
     export.account = "a test account"
-    export._read = FakeReadClient(table)
+    clients: list[FakeReadClient] = []
+    export._read_client = lambda: clients.append(FakeReadClient(table)) or clients[-1]
 
     columns = ["event_date", "event_name", "event_params", "ecommerce"]
-    assert export.read("20201101", columns).equals(table.select(columns))
-    (request,) = export._read.requests
-    assert (
-        request.read_options.arrow_serialization_options.buffer_compression
-        == types.ArrowSerializationOptions.CompressionCodec.LZ4_FRAME
-    )
+    for day in ["20201101", "20201102"]:
+        assert export.read(day, columns).equals(table.select(columns))
+    assert len(clients) == 2 and not any(client.open for client in clients)
+    for client in clients:
+        (request,) = client.requests
+        assert (
+            request.read_options.arrow_serialization_options.buffer_compression
+            == types.ArrowSerializationOptions.CompressionCodec.LZ4_FRAME
+        )
 
 
 def _events(client, database):
