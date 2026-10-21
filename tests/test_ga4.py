@@ -100,6 +100,8 @@ class FakeReadClient:
         return reader.ReadRowsStream(Gapic(), name, 0, {})
 
 
+# The stream's own to_arrow warns that it is deprecated; the export decodes the rows itself.
+@pytest.mark.filterwarnings("error::PendingDeprecationWarning")
 def test_export_reads_each_day_compressed_with_a_client_of_its_own():
     rows = [_event("20201101", "page_view", "a"), _event("20201101", "purchase", "b", 25.5)]
     table = pa.Table.from_pylist(rows, schema=SCHEMA)

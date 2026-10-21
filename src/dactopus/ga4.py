@@ -231,10 +231,19 @@ class BigQueryExport:
                 ) from None
             if not session.streams:
                 return pa.table({})
+            # Decoded here: the stream's own to_arrow is deprecated in favour of
+            # pandas-gbq, which brings pandas and google-cloud-bigquery.
+            schema = pa.ipc.read_schema(pa.py_buffer(session.arrow_schema.serialized_schema))
             try:
-                return client.read_rows(session.streams[0].name).to_arrow(session)
+                batches = [
+                    pa.ipc.read_record_batch(
+                        pa.py_buffer(message.arrow_record_batch.serialized_record_batch), schema
+                    )
+                    for message in client.read_rows(session.streams[0].name)
+                ]
             except GoogleAPICallError as exc:
                 raise LoadError(
                     f"ga4: reading events_{day} failed ({exc.code}: {exc.message}); run again "
                     "to resume from this day."
                 ) from None
+        return pa.Table.from_batches(batches, schema)
