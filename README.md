@@ -9,8 +9,8 @@ ClickHouse, builds the canonical e-commerce tables, checks them, and
 serves their [Apache Ossie](https://github.com/apache/ossie) models to AI
 agents over [MCP](https://modelcontextprotocol.io).
 
-Under construction: nothing is released. `init` and `run` work; checks,
-the report and `serve` do not yet.
+Under construction: nothing is released. `init`, `run` and `check` work;
+`serve` does not yet.
 
 ## How the parts fit
 
@@ -56,8 +56,43 @@ installed on the store, and its client id and secret; without
 
 The runner writes the dbt profile the packages name (`profile: dactopus`)
 from the configuration, without the password, which dbt reads from the
-environment. The profile and dbt's output go to `.dactopus/` next to the
-configuration file.
+environment. The profile, dbt's output and the report go to `.dactopus/`
+next to the configuration file.
+
+## Checks and the report
+
+After the build, `dactopus run` measures the freshness of the input
+(`dbt source freshness`, with the thresholds the package sets), runs the
+checks and writes the report, to the terminal and to `.dactopus/report.md`.
+`dactopus check` does the same over the tables as they are, with `dbt test`
+in place of the build. The exit code is 1 when a check failed or could not
+run, for cron.
+
+The report answers three questions first: how fresh the data is, whether
+every check passed and in words which did not, and how many rows each
+canonical table got per day over its last week against the four weeks
+before. Every finding follows below.
+
+The built-in checks:
+
+| Check | Reads | Finding |
+| --- | --- | --- |
+| `dbt` | `run_results.json` and `manifest.json` of the last dbt run | Each model, test and unit test of the package, as a sentence with the count of failing rows |
+| `freshness` | `sources.json` of `dbt source freshness` | The age of the latest input row against the package's `warn_after` and `error_after` |
+| `rows_per_day` | The canonical tables | A day without rows in the last week of `events` (GA4) or `orders` (Shopify) |
+
+A check is a function of a ClickHouse client and the configuration that
+returns findings; a finding names the check, the object, a severity
+(`pass`, `skip`, `warn`, `fail`, `error`), what was observed, what was
+expected, and one sentence for the store owner. A package registers a check
+through the entry point group `dactopus.checks`; the entry point's name is
+the check's name, and a check that raises becomes an `error` finding
+without stopping the others:
+
+```toml
+[project.entry-points."dactopus.checks"]
+reconciliation = "my_checks:reconcile_with_shopify"
+```
 
 ## Development
 

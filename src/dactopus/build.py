@@ -59,8 +59,15 @@ def write_profile(config: Config, project: Path) -> Path:
     return config.workdir
 
 
-def command(config: Config, library: Path, package: str) -> tuple[list[str], dict[str, str]]:
-    """The dbt build command line of a package and the environment it runs in."""
+def target(config: Config, package: str) -> Path:
+    """Where dbt writes the package's run_results.json, manifest.json and sources.json."""
+    return config.workdir / package / "target"
+
+
+def command(
+    config: Config, library: Path, package: str, *dbt_args: str
+) -> tuple[list[str], dict[str, str]]:
+    """The dbt command line of a package (build by default) and its environment."""
     project = library / "sources" / package
     profiles = write_profile(config, project)
     output = config.workdir / package
@@ -68,7 +75,7 @@ def command(config: Config, library: Path, package: str) -> tuple[list[str], dic
     variables[INPUT_DATABASE_VARS[package]] = config.clickhouse.input_database
     argv = [
         _dbt(),
-        "build",
+        *(dbt_args or ("build",)),
         "--project-dir",
         str(project),
         "--profiles-dir",
@@ -90,13 +97,37 @@ def command(config: Config, library: Path, package: str) -> tuple[list[str], dic
     return argv, env
 
 
-def build(config: Config, library: Path, package: str) -> None:
-    argv, env = command(config, library, package)
-    print(f"build: dbt build of {package}", file=sys.stderr)
+def _run(config: Config, library: Path, package: str, *dbt_args: str, writes: str) -> None:
+    """Run dbt on a package; raise when it could not run at all.
+
+    dbt exits with 1 when a model, test or source fails and with 2 when
+    it could not run (dbt 1.11.16); the file it writes tells the two
+    apart. Failures are read from that file by the checks.
+    """
+    argv, env = command(config, library, package, *dbt_args)
+    written = target(config, package) / writes
+    written.unlink(missing_ok=True)
+    print(f"build: dbt {' '.join(dbt_args)} of {package}", file=sys.stderr)
     # dbt prints its own progress; the password is only in the environment.
     result = subprocess.run(argv, env=env, cwd=config.workdir)
-    if result.returncode != 0:
+    if result.returncode not in (0, 1) or not written.exists():
         raise BuildError(
-            f"build: dbt build of {package} failed (exit {result.returncode}); see its "
-            f"output above and {config.workdir / package / 'logs' / 'dbt.log'}."
+            f"build: dbt {' '.join(dbt_args)} of {package} could not run (exit "
+            f"{result.returncode}); see its output above and "
+            f"{config.workdir / package / 'logs' / 'dbt.log'}."
         )
+
+
+def build(config: Config, library: Path, package: str) -> None:
+    """dbt build: the models, their tests and unit tests."""
+    _run(config, library, package, "build", writes="run_results.json")
+
+
+def test(config: Config, library: Path, package: str) -> None:
+    """dbt test: the tests and unit tests over the tables as they are."""
+    _run(config, library, package, "test", writes="run_results.json")
+
+
+def freshness(config: Config, library: Path, package: str) -> None:
+    """dbt source freshness: the age of the input against the package's thresholds."""
+    _run(config, library, package, "source", "freshness", writes="sources.json")
