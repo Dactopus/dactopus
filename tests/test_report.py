@@ -112,13 +112,15 @@ def test_tables_without_rows_or_missing_are_said_so(tmp_path):
     volumes = [
         _volume("shopify", "orders", latest, 3),
         Volume("shopify", "refunds", None, None, {}, {}),
+        Volume("shopify", "sales", latest, None, {}, {}),
         Volume("ga4", "events", None, None, {}, {}, "Code: 60. Unknown table"),
     ]
     text = report.render(cfg, [], volumes, NOW)
     assert "refunds has no rows." in text
+    assert "sales has rows only for today so far." in text
     assert "events could not be counted: Code: 60. Unknown table" in text
     assert "| 2026-10-21 Wed | 3 |" in text
-    assert "No checks ran." in text
+    assert "No checks ran: reinstall dactopus." in text
 
 
 def test_the_report_is_written_next_to_dbt_output(tmp_path):

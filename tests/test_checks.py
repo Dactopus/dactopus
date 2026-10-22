@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -23,10 +23,21 @@ from dactopus import checks, config
 # and freshness within, past and without its source table.
 FIXTURES = Path(__file__).parent / "fixtures" / "dbt" / "shopify"
 
+# The day after the latest day of _daily(date(2026, 10, 20), ...), at noon.
+NOW = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _clock(monkeypatch):
+    monkeypatch.setattr(checks, "now", lambda: NOW)
+
 
 def _config(tmp_path, *packages):
     path = tmp_path / "dactopus.yaml"
-    known = {"shopify": {"shop": "s"}, "ga4": {"project": "p", "dataset": "a.b"}}
+    known = {
+        "shopify": {"shop": "s", "vars": {"shopify_timezone": "UTC"}},
+        "ga4": {"project": "p", "dataset": "a.b"},
+    }
     path.write_text(
         yaml.safe_dump(
             {
@@ -226,7 +237,7 @@ class _Client:
             [
                 (day, n)
                 for day, n in self.counts.items()
-                if day > parameters["latest"] - timedelta(days=35)
+                if parameters["end"] - timedelta(days=35) < day <= parameters["end"]
             ]
         )
 
@@ -244,7 +255,7 @@ def test_volumes_give_the_last_week_against_past_weeks(tmp_path):
     cfg = _config(tmp_path)
     latest = date(2026, 10, 20)
     client = _Client(_daily(latest, 60))
-    volumes = checks.volumes(client, cfg)
+    volumes = checks.volumes(client, cfg, NOW)
     assert [(v.package, v.table) for v in volumes] == [
         ("shopify", "orders"),
         ("shopify", "refunds"),
@@ -261,7 +272,7 @@ def test_volumes_give_the_last_week_against_past_weeks(tmp_path):
 def test_volumes_of_a_short_history_have_no_typical_values(tmp_path):
     cfg = _config(tmp_path)
     latest = date(2026, 10, 20)
-    [orders, _] = checks.volumes(_Client(_daily(latest, 3)), cfg)
+    [orders, _] = checks.volumes(_Client(_daily(latest, 3)), cfg, NOW)
     assert list(orders.days) == [latest - timedelta(days=2), latest - timedelta(days=1), latest]
     assert set(orders.typical.values()) == {None}
 
@@ -291,8 +302,85 @@ def test_an_empty_table_warns(tmp_path):
     [finding] = checks.rows_per_day(_Client({}), cfg)
     assert finding.severity == "warn"
     assert finding.sentence == "orders (shopify) has no rows yet."
-    [orders, _] = checks.volumes(_Client({}), cfg)
+    [orders, _] = checks.volumes(_Client({}), cfg, NOW)
     assert orders.latest is None and orders.error is None
+
+
+def test_the_day_not_over_yet_is_left_out(tmp_path):
+    cfg = _config(tmp_path)
+    counts = _daily(date(2026, 10, 20), 60)
+    counts[date(2026, 10, 21)] = 2
+    [orders, _] = checks.volumes(_Client(counts), cfg, NOW)
+    assert orders.latest == date(2026, 10, 20)
+    assert date(2026, 10, 21) not in orders.days
+
+
+def test_days_are_over_in_the_shop_time_zone(tmp_path):
+    cfg = _config(tmp_path)
+    cfg.shopify.vars["shopify_timezone"] = "America/New_York"
+    # 02:00 UTC on 21 October is 22:00 on 20 October in New York.
+    at = datetime(2026, 10, 21, 2, 0, tzinfo=UTC)
+    [orders, _] = checks.volumes(_Client(_daily(date(2026, 10, 20), 60)), cfg, at)
+    assert orders.latest == date(2026, 10, 19)
+
+
+def test_the_time_zone_defaults_to_the_package(tmp_path):
+    root = tmp_path / "models"
+    (root / "sources" / "shopify").mkdir(parents=True)
+    (root / "sources" / "shopify" / "dbt_project.yml").write_text(
+        "vars:\n  shopify_timezone: Asia/Tokyo\n"
+    )
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "clickhouse": {
+                    "url": "http://db.local:8123",
+                    "input_database": "raw",
+                    "database": "canonical",
+                },
+                "models": {"path": str(root)},
+                "packages": {"shopify": {"shop": "s"}},
+            }
+        )
+    )
+    cfg = config.load(path, environ={})
+    # 20:00 UTC on 21 October is already 22 October in Tokyo.
+    at = datetime(2026, 10, 21, 20, 0, tzinfo=UTC)
+    [orders, _] = checks.volumes(_Client(_daily(date(2026, 10, 21), 60)), cfg, at)
+    assert orders.latest == date(2026, 10, 21)
+
+
+def test_a_day_without_rows_up_to_yesterday_is_a_gap(tmp_path):
+    cfg = _config(tmp_path)
+    [finding] = checks.rows_per_day(_Client(_daily(date(2026, 10, 19), 60)), cfg)
+    assert finding.severity == "warn"
+    assert finding.sentence.startswith("orders (shopify) has no rows for 2026-10-20; the other")
+
+
+def test_a_week_without_rows_says_so_without_a_spread(tmp_path):
+    cfg = _config(tmp_path)
+    [finding] = checks.rows_per_day(_Client(_daily(date(2026, 10, 1), 30)), cfg)
+    assert finding.severity == "warn"
+    assert finding.sentence == (
+        "orders (shopify) has no rows for 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17, "
+        "2026-10-18, 2026-10-19 and 2026-10-20."
+    )
+
+
+def test_rows_only_for_today_wait_for_the_day_to_end(tmp_path):
+    cfg = _config(tmp_path)
+    [finding] = checks.rows_per_day(_Client({date(2026, 10, 21): 3}), cfg)
+    assert finding.severity == "pass"
+    assert finding.sentence == (
+        "orders (shopify) has rows only for today so far; a day is counted once it is over."
+    )
+    [orders, _] = checks.volumes(_Client({date(2026, 10, 21): 3}), cfg, NOW)
+    assert (orders.first, orders.latest) == (date(2026, 10, 21), None)
+
+
+def test_no_findings_fail_the_run():
+    assert checks.failed([])
 
 
 def test_a_missing_table_is_an_error_not_a_crash(tmp_path, monkeypatch):
@@ -303,7 +391,7 @@ def test_a_missing_table_is_an_error_not_a_crash(tmp_path, monkeypatch):
     assert (
         finding.sentence == "missing (shopify) could not be counted; build it with `dactopus run`."
     )
-    [volume] = checks.volumes(_Client({}), cfg)
+    [volume] = checks.volumes(_Client({}), cfg, NOW)
     assert volume.error.startswith("Code: 60")
 
 

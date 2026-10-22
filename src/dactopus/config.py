@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -19,6 +20,10 @@ INPUT_DATABASE_VARS = {
     "ga4": "ga4_input_database",
     "shopify": "shopify_input_database",
 }
+
+# The dbt variables that name the time zone the days of a package's tables
+# are in; the default is the package's own.
+TIMEZONE_VARS = {"shopify": "shopify_timezone"}
 
 _VERSION = re.compile(r"v\d+\.\d+\.\d+")
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -210,6 +215,15 @@ def _vars(section: dict[str, Any], package: str) -> dict[str, Any]:
             f"packages.{package}.vars: remove {reserved}; the runner sets it "
             "from clickhouse.input_database."
         )
+    zone = TIMEZONE_VARS.get(package)
+    if zone in value:
+        try:
+            ZoneInfo(str(value[zone]))
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ConfigError(
+                f"packages.{package}.vars.{zone}: {value[zone]!r} is not a time zone; "
+                "give one like America/New_York."
+            ) from None
     return dict(value)
 
 

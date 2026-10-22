@@ -100,8 +100,9 @@ def _report(cfg: config.Config, root: Path, client: clickhouse.Client) -> int:
     for package in cfg.packages():
         build.freshness(cfg, root, package)
     findings = checks.run_all(client, cfg)
-    volumes = checks.volumes(client, cfg)
-    text = report.render(cfg, findings, volumes, report.now())
+    at = checks.now()
+    volumes = checks.volumes(client, cfg, at)
+    text = report.render(cfg, findings, volumes, at)
     path = report.write(cfg, text)
     print(text)
     print(f"report: {path}", file=sys.stderr)

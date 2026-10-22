@@ -140,3 +140,12 @@ def test_models_version_or_path(tmp_path):
 def test_missing_file_points_to_init(tmp_path):
     with pytest.raises(ConfigError, match="dactopus init"):
         config.load(tmp_path / "absent.yaml", environ={})
+
+
+def test_an_unknown_shop_time_zone_is_refused(tmp_path):
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(
+        config.SAMPLE.replace("shopify_timezone: UTC", "shopify_timezone: Mars/Olympus")
+    )
+    with pytest.raises(ConfigError, match="shopify_timezone: 'Mars/Olympus' is not a time zone"):
+        config.load(path, environ={})
