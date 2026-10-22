@@ -197,7 +197,7 @@ def _models(value: Any, base: Path) -> Models:
     if "version" in section:
         version = section["version"]
         if not isinstance(version, str) or not _VERSION.fullmatch(version):
-            raise ConfigError(f"models.version: {version!r} is not a release tag like v0.4.1.")
+            raise ConfigError(f"models.version: {version!r} is not a release tag like v0.5.3.")
         return Models(version=version, path=None)
     path = (base / Path(_text(section, "path", "models")).expanduser()).resolve()
     if not (path / "sources").is_dir():
@@ -277,7 +277,7 @@ clickhouse:
 
 models:
   # A release of dactopus-data-models, downloaded once into ~/.cache/dactopus.
-  version: v0.4.1
+  version: v0.5.3
   # Or a checkout of the library, for development:
   # path: ../dactopus-data-models
 

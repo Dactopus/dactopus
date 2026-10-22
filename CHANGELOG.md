@@ -10,7 +10,7 @@ a minor release may change the command line and the configuration file.
 ### Added
 
 - The repository: the `dactopus` command with `init`, `run`, `check` and
-  `serve`, which report that they are not implemented yet.
+  `serve`.
 - The configuration file `dactopus.yaml`: the ClickHouse connection, over
   TLS for an `https://` URL (port 8443 by default), with the password from
   an environment variable, the databases for input and
@@ -47,3 +47,11 @@ a minor release may change the command line and the configuration file.
   `shopify_timezone` is refused when the configuration is read. A dbt run
   with failing tests or models no longer stops the command: its results
   are in the report.
+- `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse 0.9.5
+  over stdio with the models of the configured packages
+  (`entities/web_analytics.yaml` for GA4, `entities/commerce.yaml` for
+  Shopify) read as one model, on the canonical database, over TLS for an
+  `https://` URL on any port. The password reaches the executor inside
+  the process, never on a command line. The sample configuration names
+  the models library v0.5.3, the first release whose GA4 and commerce
+  models can be served together.
