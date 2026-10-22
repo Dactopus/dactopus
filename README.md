@@ -81,7 +81,7 @@ The built-in checks:
 | --- | --- | --- |
 | `dbt` | `run_results.json` and `manifest.json` of the last dbt run | Each model, test and unit test of the package, as a sentence with the count of failing rows |
 | `freshness` | `sources.json` of `dbt source freshness` | The age of the latest input row against the package's `warn_after` and `error_after` |
-| `rows_per_day` | The canonical tables | A day without rows in the last seven days that are over of `events` (GA4) or `orders` (Shopify) |
+| `rows_per_day` | The canonical tables | A day without rows in the last seven days that are over of `events` (GA4) or `orders` (Shopify), unless the same weekday had none in the four weeks before |
 
 A check is a function of a ClickHouse client and the configuration that
 returns findings; a finding names the check, the object, a severity
