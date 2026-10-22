@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from .checks import PAST_WEEKS, SEVERITIES, Finding, Volume
@@ -45,7 +45,7 @@ def _checks(findings: list[Finding]) -> list[str]:
     total = len(findings)
     bad = [f for f in findings if f.severity in ("warn", "fail", "error")]
     if not findings:
-        lines.append("No checks ran.")
+        lines.append("No checks ran: reinstall dactopus.")
     elif not bad and not counted["skip"]:
         lines.append("Yes: the check passed." if total == 1 else f"Yes: all {total} checks passed.")
     else:
@@ -77,6 +77,8 @@ def _volumes(volumes: list[Volume]) -> list[str]:
         for empty in (v for v in own if v.latest is None):
             if empty.error:
                 lines.append(f"{empty.table} could not be counted: {empty.error}")
+            elif empty.first is not None:
+                lines.append(f"{empty.table} has rows only for today so far.")
             else:
                 lines.append(f"{empty.table} has no rows.")
         if not with_rows:
@@ -86,7 +88,7 @@ def _volumes(volumes: list[Volume]) -> list[str]:
             lines.append("")
         days = sorted({day for v in with_rows for day in v.days})
         lines.append(
-            "The last week of data, with the median of the same weekday over the "
+            "The last 7 days that are over, with the median of the same weekday over the "
             f"{PAST_WEEKS} weeks before in parentheses."
         )
         lines.append("")
@@ -125,7 +127,3 @@ def _details(findings: list[Finding]) -> list[str]:
 
 def _mark(severity: str) -> str:
     return "" if severity == "pass" else f"{severity}: "
-
-
-def now() -> datetime:
-    return datetime.now(UTC)

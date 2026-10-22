@@ -66,12 +66,14 @@ After the build, `dactopus run` measures the freshness of the input
 checks and writes the report, to the terminal and to `.dactopus/report.md`.
 `dactopus check` does the same over the tables as they are, with `dbt test`
 in place of the build. The exit code is 1 when a check failed or could not
-run, for cron.
+run, or when no check ran at all, for cron.
 
 The report answers three questions first: how fresh the data is, whether
 every check passed and in words which did not, and how many rows each
-canonical table got per day over its last week against the four weeks
-before. Every finding follows below.
+canonical table got per day over its last seven days that are over against
+the four weeks before. A Shopify day is over at midnight in the shop's time
+zone (`shopify_timezone`); a GA4 daily table is a day that is over. Every
+finding follows below.
 
 The built-in checks:
 
@@ -79,7 +81,7 @@ The built-in checks:
 | --- | --- | --- |
 | `dbt` | `run_results.json` and `manifest.json` of the last dbt run | Each model, test and unit test of the package, as a sentence with the count of failing rows |
 | `freshness` | `sources.json` of `dbt source freshness` | The age of the latest input row against the package's `warn_after` and `error_after` |
-| `rows_per_day` | The canonical tables | A day without rows in the last week of `events` (GA4) or `orders` (Shopify) |
+| `rows_per_day` | The canonical tables | A day without rows in the last seven days that are over of `events` (GA4) or `orders` (Shopify) |
 
 A check is a function of a ClickHouse client and the configuration that
 returns findings; a finding names the check, the object, a severity

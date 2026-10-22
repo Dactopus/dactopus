@@ -13,15 +13,18 @@ import re
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from importlib.metadata import entry_points
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
+import yaml
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
+from . import library
 from .build import target
-from .config import Config
+from .config import TIMEZONE_VARS, Config
 
 Severity = Literal["pass", "skip", "warn", "fail", "error"]
 
@@ -70,8 +73,16 @@ def run_all(client: Client, config: Config) -> list[Finding]:
 
 
 def failed(findings: list[Finding]) -> bool:
-    """Whether the run should exit non-zero: a fail or an error among the findings."""
-    return any(finding.severity in ("fail", "error") for finding in findings)
+    """Whether the run should exit non-zero: no findings, or a fail or an error among them.
+
+    The built-in checks always find something; none means they are not
+    installed.
+    """
+    return not findings or any(finding.severity in ("fail", "error") for finding in findings)
+
+
+def now() -> datetime:
+    return datetime.now(UTC)
 
 
 # dbt results: target/run_results.json with manifest.json for what each node is.
@@ -333,7 +344,7 @@ def ago(seconds: float) -> str:
 
 
 # Rows per day: the canonical tables counted by their date column, over the
-# last 7 days with rows against the 4 weeks before. The first table of a
+# last 7 days that are over against the 4 weeks before. The first table of a
 # package is the one a day without rows is a finding for: a day without
 # events or orders is a gap, a day without refunds is not.
 
@@ -348,11 +359,12 @@ PAST_WEEKS = 4
 
 @dataclass(frozen=True)
 class Volume:
-    """Rows per day of one table over its last week, with what past weeks had."""
+    """Rows per day of one table over its last 7 days that are over, with past weeks."""
 
     package: str
     table: str
     first: date | None
+    # The day the week ends at; None when the table has no day that is over.
     latest: date | None
     # The last 7 days ending at latest, 0 for a day without rows.
     days: dict[date, int]
@@ -367,58 +379,84 @@ class Volume:
         return [day for day, rows in self.days.items() if rows == 0]
 
 
-def volumes(client: Client, config: Config) -> list[Volume]:
+def volumes(client: Client, config: Config, at: datetime) -> list[Volume]:
     """Rows per day of each counted table of the configured packages."""
     found: list[Volume] = []
     database = config.clickhouse.database
     for package in config.packages():
+        last = _last_day(config, package, at)
         for table, column in DAILY.get(package, ()):
             try:
-                found.append(_volume(client, database, package, table, column))
+                found.append(_volume(client, database, package, table, column, last))
             except ClickHouseError as exc:
                 found.append(Volume(package, table, None, None, {}, {}, _first_line(exc)))
     return found
+
+
+def _last_day(config: Config, package: str, at: datetime) -> date | None:
+    """Yesterday in the package's time zone; None for a package whose days are all over.
+
+    GA4 is read in daily tables, each a day that is over. A Shopify day
+    is over at midnight in the shop's time zone.
+    """
+    var = TIMEZONE_VARS.get(package)
+    if var is None:
+        return None
+    zone = config.packages()[package].vars.get(var)
+    if zone is None:
+        project = library.resolve(config.models) / "sources" / package / "dbt_project.yml"
+        zone = yaml.safe_load(project.read_text())["vars"][var]
+    return at.astimezone(ZoneInfo(str(zone))).date() - timedelta(days=1)
 
 
 def _first_line(exc: Exception) -> str:
     return str(exc).splitlines()[0]
 
 
-def _volume(client: Client, database: str, package: str, table: str, column: str) -> Volume:
+def _volume(
+    client: Client, database: str, package: str, table: str, column: str, last: date | None
+) -> Volume:
     qualified = f"`{database}`.`{table}`"
     rows, first, latest = client.query(
         f"SELECT count(), min(`{column}`), max(`{column}`) FROM {qualified}"
     ).result_rows[0]
     if not rows:
         return Volume(package, table, None, None, {}, {})
+    end = latest if last is None else last
+    if end < first:
+        # Rows only for a day that is not over yet.
+        return Volume(package, table, first, None, {}, {})
     span = WEEK * (PAST_WEEKS + 1)
     counted = dict(
         client.query(
             f"SELECT `{column}` AS day, count() FROM {qualified} "
-            f"WHERE `{column}` > {{latest:Date}} - INTERVAL {span} DAY GROUP BY day",
-            parameters={"latest": latest},
+            f"WHERE `{column}` > {{end:Date}} - INTERVAL {span} DAY "
+            f"AND `{column}` <= {{end:Date}} GROUP BY day",
+            parameters={"end": end},
         ).result_rows
     )
-    window = [latest - timedelta(days=i) for i in range(WEEK - 1, -1, -1)]
+    window = [end - timedelta(days=i) for i in range(WEEK - 1, -1, -1)]
     days = {day: int(counted.get(day, 0)) for day in window if day >= first}
     typical: dict[date, int | None] = {}
     for day in days:
         past = [day - timedelta(weeks=w) for w in range(1, PAST_WEEKS + 1)]
         past = [p for p in past if p >= first]
         typical[day] = int(statistics.median(counted.get(p, 0) for p in past)) if past else None
-    return Volume(package, table, first, latest, days, typical)
+    return Volume(package, table, first, end, days, typical)
 
 
 def rows_per_day(client: Client, config: Config) -> list[Finding]:
-    """A day without rows in the last week of a package's first table."""
+    """A day without rows in the last 7 days that are over of a package's first table."""
     findings: list[Finding] = []
+    at = now()
     for package in config.packages():
         tables = DAILY.get(package)
         if not tables:
             continue
         table, column = tables[0]
+        last = _last_day(config, package, at)
         try:
-            volume = _volume(client, config.clickhouse.database, package, table, column)
+            volume = _volume(client, config.clickhouse.database, package, table, column, last)
         except ClickHouseError as exc:
             findings.append(
                 Finding(
@@ -431,7 +469,7 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                 )
             )
             continue
-        if volume.latest is None:
+        if volume.first is None:
             findings.append(
                 Finding(
                     "rows per day",
@@ -443,15 +481,31 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                 )
             )
             continue
+        if volume.latest is None:
+            findings.append(
+                Finding(
+                    "rows per day",
+                    table,
+                    "pass",
+                    "rows only for today",
+                    "rows every day",
+                    f"{table} ({package}) has rows only for today so far; a day is "
+                    "counted once it is over.",
+                )
+            )
+            continue
         gaps = volume.gaps
         first_day = min(volume.days)
         if gaps:
             others = [rows for rows in volume.days.values() if rows]
-            spread = (
-                f"{min(others):,}"
-                if min(others) == max(others)
-                else f"{min(others):,} to {max(others):,}"
-            )
+            sentence = f"{table} ({package}) has no rows for {_days(gaps)}"
+            if others:
+                spread = (
+                    f"{min(others):,}"
+                    if min(others) == max(others)
+                    else f"{min(others):,} to {max(others):,}"
+                )
+                sentence += f"; the other days of that week have {spread}"
             findings.append(
                 Finding(
                     "rows per day",
@@ -459,8 +513,7 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                     "warn",
                     f"no rows on {', '.join(day.isoformat() for day in gaps)}",
                     "rows every day",
-                    f"{table} ({package}) has no rows for {_days(gaps)}; the other days "
-                    f"of that week have {spread}.",
+                    f"{sentence}.",
                 )
             )
         else:
