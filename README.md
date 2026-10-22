@@ -107,18 +107,35 @@ the domains the configured packages cover, read as one model:
 | Shopify | `entities/commerce.yaml` |
 
 The models name their tables without a database; the executor reads them
-in `clickhouse.database`, as the configured ClickHouse user. Everything the
-agent sees and runs is limited to that user, so give the agent its own
-user with read grants on the canonical database.
+in `clickhouse.database`. The agent sees and runs only what its ClickHouse
+user may: the executor leaves out of the model what the user's grants do
+not cover. The user of `clickhouse.url` writes the tables, so give the
+agent a user of its own in the `serve` section, on the same host:
+
+```yaml
+serve:
+  user: agent
+  password_env: AGENT_CLICKHOUSE_PASSWORD
+```
+
+```sql
+CREATE USER agent IDENTIFIED BY '...';
+GRANT SELECT ON dactopus.* TO agent;
+```
+
+Read grants on the canonical database are enough. Each command reads only
+the password it connects with: `serve` needs the variable
+`serve.password_env` names, `run` and `check` the one
+`clickhouse.password_env` names. Without the `serve` section, `serve` runs
+as the user of `clickhouse.url`.
 
 An agent starts the command from a directory of its own and with a short
 `PATH`, so give absolute paths to the command and the configuration, and
-set the variable `clickhouse.password_env` names (`CLICKHOUSE_PASSWORD`
-below) in the server's environment. For
+set the password variable in the server's environment. For
 [Claude Code](https://docs.claude.com/en/docs/claude-code/mcp):
 
 ```bash
-claude mcp add dactopus -e CLICKHOUSE_PASSWORD=... -- \
+claude mcp add dactopus -e AGENT_CLICKHOUSE_PASSWORD=... -- \
   /ABSOLUTE/PATH/TO/dactopus serve --config /ABSOLUTE/PATH/TO/dactopus.yaml
 ```
 
@@ -130,7 +147,7 @@ For Claude Desktop, in `claude_desktop_config.json`:
     "dactopus": {
       "command": "/ABSOLUTE/PATH/TO/dactopus",
       "args": ["serve", "--config", "/ABSOLUTE/PATH/TO/dactopus.yaml"],
-      "env": {"CLICKHOUSE_PASSWORD": "..."}
+      "env": {"AGENT_CLICKHOUSE_PASSWORD": "..."}
     }
   }
 }

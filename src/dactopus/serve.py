@@ -36,13 +36,15 @@ def url(cfg: Config) -> str:
     """The executor's ClickHouse URL: the canonical database is its path.
 
     The models name their tables without a database; the executor reads
-    them in the database of the URL, over TLS for https.
+    them in the database of the URL, over TLS for https, as the serve user
+    when the configuration names one.
     """
     ch = cfg.clickhouse
+    user, password = (cfg.serve.user, cfg.serve.password) if cfg.serve else (ch.user, ch.password)
     scheme = "https" if ch.secure else "http"
-    credentials = quote(ch.user, safe="")
-    if ch.password:
-        credentials += ":" + quote(ch.password, safe="")
+    credentials = quote(user, safe="")
+    if password:
+        credentials += ":" + quote(password, safe="")
     host = f"[{ch.host}]" if ":" in ch.host else ch.host  # IPv6
     return f"{scheme}://{credentials}@{host}:{ch.port}/{ch.database}"
 

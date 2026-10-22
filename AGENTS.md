@@ -28,8 +28,9 @@ introduce text in any other language, even in examples or fixtures.
 
 In scope:
 
-- One configuration file per installation: the ClickHouse connection, the
-  databases for raw input and canonical tables, the version of the models
+- One configuration file per installation: the ClickHouse connection and
+  the user `serve` connects as, the databases for raw input and canonical
+  tables, the version of the models
   library, the packages to run and their parameters.
 - Loading GA4: the BigQuery export, read with the Storage Read API, into
   the GA4 package's input table.

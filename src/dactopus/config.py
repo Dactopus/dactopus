@@ -46,6 +46,15 @@ class ClickHouse:
 
 
 @dataclass(frozen=True)
+class Serve:
+    """The ClickHouse user the AI agent's questions run as, in `dactopus serve`."""
+
+    user: str
+    # Read only by `dactopus serve`; None for the other commands.
+    password: str | None = field(repr=False)
+
+
+@dataclass(frozen=True)
 class Models:
     version: str | None
     path: Path | None
@@ -74,6 +83,7 @@ class Config:
     models: Models
     ga4: GA4 | None
     shopify: Shopify | None
+    serve: Serve | None = None
 
     @property
     def workdir(self) -> Path:
@@ -85,7 +95,13 @@ class Config:
         return {name: package for name, package in found.items() if package is not None}
 
 
-def load(path: Path, environ: dict[str, str] | None = None) -> Config:
+def load(path: Path, environ: dict[str, str] | None = None, serving: bool = False) -> Config:
+    """Read the configuration; ``serving`` for `dactopus serve`.
+
+    Each command reads only the password it connects with: an agent that
+    starts `serve` has the password of the serve user, cron that starts
+    `run` the password of the clickhouse.url user.
+    """
     environ = os.environ if environ is None else environ
     try:
         raw = yaml.safe_load(path.read_text())
@@ -95,17 +111,21 @@ def load(path: Path, environ: dict[str, str] | None = None) -> Config:
         ) from None
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path} is not valid YAML: {exc}") from None
-    top = _section(raw, "the file", {"clickhouse", "models", "packages"})
+    top = _section(raw, "the file", {"clickhouse", "models", "packages", "serve"})
     path = path.resolve()
     packages = _section(top.get("packages"), "packages", set(INPUT_DATABASE_VARS))
     if not packages:
         raise ConfigError("packages: name at least one package, ga4 or shopify.")
+    serve = _serve(top["serve"], environ if serving else None) if "serve" in top else None
     return Config(
         path=path,
-        clickhouse=_clickhouse(top.get("clickhouse"), environ),
+        clickhouse=_clickhouse(
+            top.get("clickhouse"), None if serving and serve is not None else environ
+        ),
         models=_models(top.get("models"), path.parent),
         ga4=_ga4(packages["ga4"], path.parent) if "ga4" in packages else None,
         shopify=_shopify(packages["shopify"]) if "shopify" in packages else None,
+        serve=serve,
     )
 
 
@@ -139,7 +159,20 @@ def _database(section: dict[str, Any], key: str) -> str:
     return value
 
 
-def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
+def _password(section: dict[str, Any], where: str, environ: dict[str, str] | None) -> str | None:
+    """The password from the variable password_env names; None when environ is None."""
+    if "password_env" not in section:
+        return ""
+    name = _text(section, "password_env", where)
+    if environ is None:
+        return None
+    if name not in environ:
+        raise ConfigError(f"{where}.password_env: the environment variable {name} is not set.")
+    return environ[name]
+
+
+def _clickhouse(value: Any, environ: dict[str, str] | None) -> ClickHouse:
+    """The connection; with environ None the password is left unread, as ""."""
     section = _section(value, "clickhouse", {"url", "password_env", "input_database", "database"})
     url = urlsplit(_text(section, "url", "clickhouse"))
     if url.scheme not in ("http", "https"):
@@ -162,14 +195,7 @@ def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
         port = url.port
     except ValueError:
         raise ConfigError("clickhouse.url: the port is not a number from 1 to 65535.") from None
-    password = ""
-    if "password_env" in section:
-        name = _text(section, "password_env", "clickhouse")
-        if name not in environ:
-            raise ConfigError(
-                f"clickhouse.password_env: the environment variable {name} is not set."
-            )
-        password = environ[name]
+    password = _password(section, "clickhouse", environ) or ""
     input_database = _database(section, "input_database")
     database = _database(section, "database")
     if input_database == database:
@@ -187,6 +213,13 @@ def _clickhouse(value: Any, environ: dict[str, str]) -> ClickHouse:
         input_database=input_database,
         database=database,
         secure=url.scheme == "https",
+    )
+
+
+def _serve(value: Any, environ: dict[str, str] | None) -> Serve:
+    section = _section(value, "serve", {"user", "password_env"})
+    return Serve(
+        user=_text(section, "user", "serve"), password=_password(section, "serve", environ)
     )
 
 
@@ -280,6 +313,13 @@ models:
   version: v0.5.3
   # Or a checkout of the library, for development:
   # path: ../dactopus-data-models
+
+# The ClickHouse user an AI agent's questions run as in `dactopus serve`, on
+# the host of clickhouse.url: give it read grants on clickhouse.database
+# only. Without this section, serve runs as the user of clickhouse.url.
+# serve:
+#   user: agent
+#   password_env: AGENT_CLICKHOUSE_PASSWORD
 
 packages:
   ga4:

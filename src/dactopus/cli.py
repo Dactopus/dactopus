@@ -97,7 +97,7 @@ def _check(args: argparse.Namespace) -> int:
 
 def _serve(args: argparse.Namespace) -> int:
     """MCP over stdio: stdout is the protocol, so nothing else is printed there."""
-    cfg = config.load(args.config)
+    cfg = config.load(args.config, serving=True)
     return serve.serve(cfg, library.resolve(cfg.models))
 
 

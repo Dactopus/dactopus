@@ -12,26 +12,30 @@ from dactopus.serve import ServeError
 
 
 def _config(
-    tmp_path: Path, url: str, packages=("ga4", "shopify"), environ=None, database="canonical"
+    tmp_path: Path,
+    url: str,
+    packages=("ga4", "shopify"),
+    environ=None,
+    database="canonical",
+    serve_section=None,
 ) -> config.Config:
     all_packages = {
         "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
         "shopify": {"shop": "dactopus-dev"},
     }
     clickhouse = {"url": url, "input_database": "raw", "database": database}
-    if environ:
+    if environ and serve_section is None:
         clickhouse["password_env"] = "CLICKHOUSE_PASSWORD"
+    data = {
+        "clickhouse": clickhouse,
+        "models": {"version": "v0.5.3"},
+        "packages": {name: all_packages[name] for name in packages},
+    }
+    if serve_section is not None:
+        data["serve"] = serve_section
     path = tmp_path / "dactopus.yaml"
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "clickhouse": clickhouse,
-                "models": {"version": "v0.5.3"},
-                "packages": {name: all_packages[name] for name in packages},
-            }
-        )
-    )
-    return config.load(path, environ=environ or {})
+    path.write_text(yaml.safe_dump(data))
+    return config.load(path, environ=environ or {}, serving=True)
 
 
 def _library(tmp_path: Path, files=None) -> Path:
@@ -79,6 +83,16 @@ def test_url_quotes_the_credentials(tmp_path):
         "/canonical",
     )
     assert (unquote(parts.username), unquote(parts.password)) == ("us er", secret)
+
+
+def test_url_names_the_serve_user(tmp_path):
+    cfg = _config(
+        tmp_path,
+        "https://loader@db.local:9443",
+        environ={"AGENT_PASSWORD": "re@d"},
+        serve_section={"user": "agent", "password_env": "AGENT_PASSWORD"},
+    )
+    assert serve.url(cfg) == "https://agent:re%40d@db.local:9443/canonical"
 
 
 def test_url_brackets_an_ipv6_host(tmp_path):
@@ -131,23 +145,54 @@ def test_models_of_both_packages_load_as_one(tmp_path, models_library):
     load_model(*serve.model_files(cfg, models_library))
 
 
-def test_executor_connects_with_the_url(tmp_path, clickhouse):
-    from dactopus_ossie_clickhouse.executor import connect
+# The smallest model the executor serves: one table of the canonical database.
+_MODEL = """\
+version: "0.2.0.dev0"
+name: probe
+datasets:
+  - name: orders
+    source: orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
+metrics:
+  - name: orders
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(orders.order_id)}]}
+"""
+
+
+def test_serve_user_with_read_grants_is_enough(tmp_path, clickhouse):
+    """The executor connects with the URL serve builds, as a serve user whose
+    password needs quoting and who may only read the canonical database, and
+    answers a question there."""
+    from dactopus_ossie_clickhouse.executor import Executor, connect
+    from dactopus_ossie_clickhouse.planner import Query
 
     server, database = clickhouse
-    user, secret = f"{database}_reader", "p@ss:w/rd?#%"
+    user, secret = f"{database}_agent", "p@ss:w/rd?#%"
     server.command(f"CREATE DATABASE `{database}`")
+    server.command(
+        f"CREATE TABLE `{database}`.orders (order_id Int64) ENGINE = MergeTree ORDER BY order_id"
+    )
+    server.command(f"INSERT INTO `{database}`.orders VALUES (1), (2)")
     server.command(f"CREATE USER `{user}` IDENTIFIED BY '{secret}'")
     try:
         server.command(f"GRANT SELECT ON `{database}`.* TO `{user}`")
         base = urlsplit(os.environ.get("DACTOPUS_CLICKHOUSE_URL", "http://127.0.0.1:8123"))
         cfg = _config(
             tmp_path,
-            f"http://{user}@{base.netloc.rpartition('@')[2]}",
-            environ={"CLICKHOUSE_PASSWORD": secret},
+            f"http://{base.netloc}",
+            # Only the serve user's password: the agent's environment has no other.
+            environ={"AGENT_PASSWORD": secret},
             database=database,
+            serve_section={"user": user, "password_env": "AGENT_PASSWORD"},
         )
-        found = connect(serve.url(cfg)).query("SELECT currentUser(), currentDatabase()")
+        client = connect(serve.url(cfg))
+        found = client.query("SELECT currentUser(), currentDatabase()")
         assert found.result_rows == [(user, database)]
+        (tmp_path / "probe.yaml").write_text(_MODEL)
+        executor = Executor(client, load_model(tmp_path / "probe.yaml"))
+        assert executor.execute(Query(("orders",), (), (), (), None)).rows == [(2,)]
     finally:
         server.command(f"DROP USER IF EXISTS `{user}`")
