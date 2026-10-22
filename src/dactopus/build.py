@@ -101,7 +101,7 @@ def _run(config: Config, library: Path, package: str, *dbt_args: str, writes: st
     """Run dbt on a package; raise when it could not run at all.
 
     dbt exits with 1 when a model, test or source fails and with 2 when
-    it could not run (dbt 1.11.16); the file it writes tells the two
+    it could not run (dbt 1.11.16, 2026-10-22); the file it writes tells the two
     apart. Failures are read from that file by the checks.
     """
     argv, env = command(config, library, package, *dbt_args)

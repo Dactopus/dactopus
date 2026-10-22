@@ -20,6 +20,7 @@ from typing import Any, Literal
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
+from .build import target
 from .config import Config
 
 Severity = Literal["pass", "skip", "warn", "fail", "error"]
@@ -84,17 +85,21 @@ _STATUS: dict[str, Severity] = {
     "skipped": "skip",
 }
 
-_REF = re.compile(r"ref\(\s*'([^']+)'\s*\)")
+_REF = re.compile(r"""ref\(\s*['"]([^'"]+)['"]\s*\)""")
+
+# The status of exposures and saved queries in `dbt build`: nothing ran,
+# so there is nothing to report (the source of dbt 1.11.16, 2026-10-22).
+_NOT_RUN = "no-op"
 
 
 def dbt_results(client: Client, config: Config) -> list[Finding]:
     """The models, tests and unit tests of the last dbt run of each package."""
     findings: list[Finding] = []
     for package in config.packages():
-        target = config.workdir / package / "target"
+        where = target(config, package)
         try:
-            results = json.loads((target / "run_results.json").read_text())
-            manifest = json.loads((target / "manifest.json").read_text())
+            results = json.loads((where / "run_results.json").read_text())
+            manifest = json.loads((where / "manifest.json").read_text())
         except FileNotFoundError:
             findings.append(
                 Finding(
@@ -108,7 +113,8 @@ def dbt_results(client: Client, config: Config) -> list[Finding]:
             )
             continue
         for result in results["results"]:
-            findings.append(_dbt_finding(result, manifest))
+            if result["status"] != _NOT_RUN:
+                findings.append(_dbt_finding(result, manifest))
     return findings
 
 
@@ -229,7 +235,7 @@ def freshness(client: Client, config: Config) -> list[Finding]:
     """How old the latest input row of each package is, against the package's thresholds."""
     findings: list[Finding] = []
     for package in config.packages():
-        path = config.workdir / package / "target" / "sources.json"
+        path = target(config, package) / "sources.json"
         try:
             results = json.loads(path.read_text())["results"]
         except FileNotFoundError:
@@ -246,7 +252,8 @@ def freshness(client: Client, config: Config) -> list[Finding]:
             )
             continue
         if not results:
-            # dbt 1.11.16 writes an empty list when the source table is missing.
+            # dbt 1.11.16 writes an empty list when the source table is missing
+            # (2026-10-22).
             findings.append(
                 Finding(
                     check="freshness",
