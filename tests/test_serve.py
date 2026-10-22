@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -10,12 +11,14 @@ from dactopus.cli import main
 from dactopus.serve import ServeError
 
 
-def _config(tmp_path: Path, url: str, packages=("ga4", "shopify"), environ=None) -> config.Config:
+def _config(
+    tmp_path: Path, url: str, packages=("ga4", "shopify"), environ=None, database="canonical"
+) -> config.Config:
     all_packages = {
         "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
         "shopify": {"shop": "dactopus-dev"},
     }
-    clickhouse = {"url": url, "input_database": "raw", "database": "canonical"}
+    clickhouse = {"url": url, "input_database": "raw", "database": database}
     if environ:
         clickhouse["password_env"] = "CLICKHOUSE_PASSWORD"
     path = tmp_path / "dactopus.yaml"
@@ -126,3 +129,25 @@ def test_model_of_each_package_loads(tmp_path, models_library, package):
 def test_models_of_both_packages_load_as_one(tmp_path, models_library):
     cfg = _config(tmp_path, "http://default@127.0.0.1:8123")
     load_model(*serve.model_files(cfg, models_library))
+
+
+def test_executor_connects_with_the_url(tmp_path, clickhouse):
+    from dactopus_ossie_clickhouse.executor import connect
+
+    server, database = clickhouse
+    user, secret = f"{database}_reader", "p@ss:w/rd?#%"
+    server.command(f"CREATE DATABASE `{database}`")
+    server.command(f"CREATE USER `{user}` IDENTIFIED BY '{secret}'")
+    try:
+        server.command(f"GRANT SELECT ON `{database}`.* TO `{user}`")
+        base = urlsplit(os.environ.get("DACTOPUS_CLICKHOUSE_URL", "http://127.0.0.1:8123"))
+        cfg = _config(
+            tmp_path,
+            f"http://{user}@{base.netloc.rpartition('@')[2]}",
+            environ={"CLICKHOUSE_PASSWORD": secret},
+            database=database,
+        )
+        found = connect(serve.url(cfg)).query("SELECT currentUser(), currentDatabase()")
+        assert found.result_rows == [(user, database)]
+    finally:
+        server.command(f"DROP USER IF EXISTS `{user}`")
