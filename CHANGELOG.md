@@ -51,7 +51,10 @@ a minor release may change the command line and the configuration file.
   over stdio with the models of the configured packages
   (`entities/web_analytics.yaml` for GA4, `entities/commerce.yaml` for
   Shopify) read as one model, on the canonical database, over TLS for an
-  `https://` URL on any port. The password reaches the executor inside
-  the process, never on a command line. The sample configuration names
+  `https://` URL on any port, as the ClickHouse user of the optional
+  `serve` section (`user`, `password_env`) or else the user of
+  `clickhouse.url`. Each command reads only the password it connects
+  with. The password reaches the executor inside the process, never on a
+  command line. The sample configuration names
   the models library v0.5.3, the first release whose GA4 and commerce
   models can be served together.

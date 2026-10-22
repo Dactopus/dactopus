@@ -149,3 +149,46 @@ def test_an_unknown_shop_time_zone_is_refused(tmp_path):
     )
     with pytest.raises(ConfigError, match="shopify_timezone: 'Mars/Olympus' is not a time zone"):
         config.load(path, environ={})
+
+
+def _with_serve(data: dict) -> dict:
+    data["clickhouse"]["password_env"] = "CH_PASSWORD"
+    data["serve"] = {"user": "agent", "password_env": "AGENT_PASSWORD"}
+    return data
+
+
+def test_each_command_reads_only_its_password(tmp_path):
+    path = _write(tmp_path, _with_serve(_base()))
+    run = config.load(path, environ={"CH_PASSWORD": "write"})
+    assert (run.clickhouse.password, run.serve.user, run.serve.password) == ("write", "agent", None)
+    serving = config.load(path, environ={"AGENT_PASSWORD": "s3cret-r"}, serving=True)
+    assert (serving.serve.user, serving.serve.password) == ("agent", "s3cret-r")
+    assert "s3cret-r" not in repr(serving)
+
+
+def test_serve_password_variable_is_named(tmp_path):
+    path = _write(tmp_path, _with_serve(_base()))
+    with pytest.raises(ConfigError, match="serve.password_env: the environment variable AGENT"):
+        config.load(path, environ={"CH_PASSWORD": "write"}, serving=True)
+
+
+def test_serving_without_serve_section_reads_the_clickhouse_password(tmp_path):
+    data = _base()
+    data["clickhouse"]["password_env"] = "CH_PASSWORD"
+    with pytest.raises(ConfigError, match="clickhouse.password_env"):
+        config.load(_write(tmp_path, data), environ={}, serving=True)
+
+
+@pytest.mark.parametrize(
+    ("section", "message"),
+    [
+        ({"password_env": "AGENT_PASSWORD"}, "serve.user: missing"),
+        ({"user": "agent", "url": "http://agent@h"}, "serve: unknown key url"),
+        (None, "serve: missing"),
+    ],
+)
+def test_serve_section_is_checked(tmp_path, section, message):
+    data = _base()
+    data["serve"] = section
+    with pytest.raises(ConfigError, match=message):
+        config.load(_write(tmp_path, data), environ={})
