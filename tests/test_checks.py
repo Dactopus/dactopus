@@ -1,0 +1,313 @@
+import json
+from datetime import date, timedelta
+from pathlib import Path
+
+import pytest
+import yaml
+from clickhouse_connect.driver.exceptions import DatabaseError
+
+from dactopus import checks, config
+
+# Output of dbt 1.11.16 with dbt-clickhouse 1.10 over the shopify package of
+# dactopus-data-models v0.4.1 and the library's tests/shopify/fixture.sql,
+# recorded on 2026-10-22 and cut down to what the checks read:
+# - run_results_*.json: metadata, and of each result unique_id, status,
+#   message and failures (not the compiled SQL, timing or adapter response);
+# - sources_*.json: metadata, and of each result unique_id, status,
+#   max_loaded_at, max_loaded_at_time_ago_in_s, criteria and error;
+# - manifest.json: metadata; of a test node name, resource_type,
+#   test_metadata, column_name, attached_node and depends_on.nodes; of a
+#   model node name and resource_type; of a unit test name and model.
+# The cases: a clean build (one package warning), dbt test with duplicated
+# rows, a build stopped by that failure, a build with a dropped input table,
+# and freshness within, past and without its source table.
+FIXTURES = Path(__file__).parent / "fixtures" / "dbt" / "shopify"
+
+
+def _config(tmp_path, *packages):
+    path = tmp_path / "dactopus.yaml"
+    known = {"shopify": {"shop": "s"}, "ga4": {"project": "p", "dataset": "a.b"}}
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "clickhouse": {
+                    "url": "http://db.local:8123",
+                    "input_database": "raw",
+                    "database": "canonical",
+                },
+                "models": {"version": "v0.4.1"},
+                "packages": {p: known[p] for p in packages or ("shopify",)},
+            }
+        )
+    )
+    return config.load(path, environ={})
+
+
+def _target(cfg, package="shopify", run_results=None, sources=None):
+    target = cfg.workdir / package / "target"
+    target.mkdir(parents=True)
+    (target / "manifest.json").write_bytes((FIXTURES / "manifest.json").read_bytes())
+    if run_results:
+        (target / "run_results.json").write_bytes((FIXTURES / run_results).read_bytes())
+    if sources:
+        (target / "sources.json").write_bytes((FIXTURES / sources).read_bytes())
+
+
+def _count(findings):
+    return {s: sum(1 for f in findings if f.severity == s) for s in checks.SEVERITIES}
+
+
+def _sentences(findings, severity):
+    return [f.sentence for f in findings if f.severity == severity]
+
+
+def test_a_clean_build_passes_but_for_the_package_warning(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_pass.json")
+    findings = checks.dbt_results(None, cfg)
+    assert _count(findings) == {"pass": 32, "skip": 0, "warn": 1, "fail": 0, "error": 0}
+    assert {f.check for f in findings} == {"dbt"}
+    assert _sentences(findings, "warn") == [
+        "1 row of orders fails the check sales events make net total."
+    ]
+    assert "order_id is set in every row of orders." in _sentences(findings, "pass")
+    assert "The unit test refund_lines_of_one_line_item of refunds passes." in _sentences(
+        findings, "pass"
+    )
+    assert "orders was built." in _sentences(findings, "pass")
+    assert not checks.failed(findings)
+
+
+def test_failing_tests_become_sentences_with_counts(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_test_fail.json")
+    findings = checks.dbt_results(None, cfg)
+    assert _count(findings) == {"pass": 25, "skip": 0, "warn": 1, "fail": 3, "error": 0}
+    assert sorted(_sentences(findings, "fail")) == [
+        "1 value of order_id appears in more than one row of orders.",
+        "2 rows of order_lines have no matching order_id in orders.",
+        "2 values of line_id appear in more than one row of order_lines.",
+    ]
+    duplicate = next(f for f in findings if f.object == "orders.order_id" and f.severity == "fail")
+    assert (duplicate.observed, duplicate.expected) == ("1 rows", "0 rows")
+    assert checks.failed(findings)
+
+
+def test_a_build_stopped_by_a_failure_reports_what_did_not_run(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_skipped.json")
+    findings = checks.dbt_results(None, cfg)
+    counted = _count(findings)
+    assert counted["fail"] == 1 and counted["skip"] == 28
+    assert "orders was not built because an earlier step failed." in _sentences(findings, "skip")
+    assert (
+        "The not_null test on orders.order_id did not run because an earlier step failed."
+        in _sentences(findings, "skip")
+    )
+
+
+def test_a_model_error_names_the_table_and_dbt_message(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_error.json")
+    findings = checks.dbt_results(None, cfg)
+    [error] = [f for f in findings if f.severity == "error"]
+    assert error.object == "orders"
+    assert error.sentence.startswith("orders could not be built: Database Error in model orders")
+
+
+def test_a_package_without_a_run_is_an_error(tmp_path):
+    cfg = _config(tmp_path, "ga4", "shopify")
+    _target(cfg, run_results="run_results_build_pass.json")
+    findings = checks.dbt_results(None, cfg)
+    [error] = [f for f in findings if f.severity == "error"]
+    assert error.object == "ga4"
+    assert "has not been built yet" in error.sentence
+
+
+def test_freshness_within_the_threshold(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, sources="sources_pass.json")
+    [finding] = checks.freshness(None, cfg)
+    assert (finding.check, finding.object, finding.severity) == ("freshness", "orders", "pass")
+    assert finding.observed == "latest 2026-10-21 23:29 UTC, a minute ago"
+    assert finding.expected == "within 1 day, 3 days at most"
+    assert finding.sentence == (
+        "The shopify input is current: the latest row of orders is a minute old (2026-10-21)."
+    )
+
+
+def test_freshness_past_the_error_threshold(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, sources="sources_stale.json")
+    [finding] = checks.freshness(None, cfg)
+    assert finding.severity == "error"
+    assert finding.sentence == (
+        "No new rows of orders (shopify) for 18 days, the latest from 2026-10-04; the "
+        "package allows 3 days at most. Check that the source still exports and the load runs."
+    )
+
+
+def test_freshness_of_a_missing_input_table(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, sources="sources_error.json")
+    [finding] = checks.freshness(None, cfg)
+    assert finding.severity == "error"
+    assert "its input table is missing" in finding.sentence
+
+
+def test_freshness_without_a_run(tmp_path):
+    cfg = _config(tmp_path)
+    [finding] = checks.freshness(None, cfg)
+    assert finding.severity == "error"
+    assert "run `dactopus run`" in finding.sentence
+
+
+@pytest.mark.parametrize(
+    ("seconds", "words"),
+    [
+        (14, "a minute"),
+        (90, "a minute"),
+        (600, "10 minutes"),
+        (7200, "2 hours"),
+        (200000, "2 days"),
+    ],
+)
+def test_age_in_words(seconds, words):
+    assert checks.ago(seconds) == words
+
+
+class _Result:
+    def __init__(self, rows):
+        self.result_rows = rows
+
+
+class _Client:
+    """Answers the two queries of a volume for one table of daily counts."""
+
+    def __init__(self, counts: dict[date, int]):
+        self.counts = counts
+
+    def query(self, sql, parameters=None):
+        if "missing" in sql:
+            raise DatabaseError("Code: 60. Unknown table")
+        if sql.startswith("SELECT count()"):
+            if not self.counts:
+                return _Result([(0, date(1970, 1, 1), date(1970, 1, 1))])
+            return _Result([(sum(self.counts.values()), min(self.counts), max(self.counts))])
+        return _Result(
+            [
+                (day, n)
+                for day, n in self.counts.items()
+                if day > parameters["latest"] - timedelta(days=35)
+            ]
+        )
+
+
+def _daily(latest, days, gap=None):
+    counts = {}
+    for i in range(days):
+        day = latest - timedelta(days=i)
+        if day != gap:
+            counts[day] = 10 + i % 7
+    return counts
+
+
+def test_volumes_give_the_last_week_against_past_weeks(tmp_path):
+    cfg = _config(tmp_path)
+    latest = date(2026, 10, 20)
+    client = _Client(_daily(latest, 60))
+    volumes = checks.volumes(client, cfg)
+    assert [(v.package, v.table) for v in volumes] == [
+        ("shopify", "orders"),
+        ("shopify", "refunds"),
+    ]
+    orders = volumes[0]
+    assert (orders.first, orders.latest) == (date(2026, 8, 22), latest)
+    assert list(orders.days) == [latest - timedelta(days=i) for i in range(6, -1, -1)]
+    assert orders.days[latest] == 10
+    # The same weekday a week, two, three and four weeks before had 10 too.
+    assert orders.typical[latest] == 10
+    assert orders.gaps == []
+
+
+def test_volumes_of_a_short_history_have_no_typical_values(tmp_path):
+    cfg = _config(tmp_path)
+    latest = date(2026, 10, 20)
+    [orders, _] = checks.volumes(_Client(_daily(latest, 3)), cfg)
+    assert list(orders.days) == [latest - timedelta(days=2), latest - timedelta(days=1), latest]
+    assert set(orders.typical.values()) == {None}
+
+
+def test_a_day_without_rows_in_the_first_table_warns(tmp_path):
+    cfg = _config(tmp_path)
+    latest = date(2026, 10, 20)
+    gap = latest - timedelta(days=3)
+    [finding] = checks.rows_per_day(_Client(_daily(latest, 60, gap=gap)), cfg)
+    assert (finding.check, finding.object, finding.severity) == ("rows per day", "orders", "warn")
+    assert finding.sentence == (
+        "orders (shopify) has no rows for 2026-10-17; the other days of that week have 10 to 16."
+    )
+
+
+def test_rows_every_day_passes(tmp_path):
+    cfg = _config(tmp_path)
+    [finding] = checks.rows_per_day(_Client(_daily(date(2026, 10, 20), 60)), cfg)
+    assert finding.severity == "pass"
+    assert (
+        finding.sentence == "orders (shopify) has rows on every day from 2026-10-14 to 2026-10-20."
+    )
+
+
+def test_an_empty_table_warns(tmp_path):
+    cfg = _config(tmp_path)
+    [finding] = checks.rows_per_day(_Client({}), cfg)
+    assert finding.severity == "warn"
+    assert finding.sentence == "orders (shopify) has no rows yet."
+    [orders, _] = checks.volumes(_Client({}), cfg)
+    assert orders.latest is None and orders.error is None
+
+
+def test_a_missing_table_is_an_error_not_a_crash(tmp_path, monkeypatch):
+    cfg = _config(tmp_path)
+    monkeypatch.setitem(checks.DAILY, "shopify", (("missing", "order_date"),))
+    [finding] = checks.rows_per_day(_Client({}), cfg)
+    assert finding.severity == "error"
+    assert (
+        finding.sentence == "missing (shopify) could not be counted; build it with `dactopus run`."
+    )
+    [volume] = checks.volumes(_Client({}), cfg)
+    assert volume.error.startswith("Code: 60")
+
+
+class _EntryPoint:
+    def __init__(self, name, check):
+        self.name, self.value, self.check = name, f"plugin:{name}", check
+
+    def load(self):
+        return self.check
+
+
+def test_run_all_keeps_going_when_a_plugin_breaks(tmp_path, monkeypatch):
+    cfg = _config(tmp_path)
+    ok = checks.Finding("mine", "orders", "pass", "1", "1", "Fine.")
+
+    def boom(client, config):
+        raise ValueError("no such column")
+
+    monkeypatch.setattr(
+        checks,
+        "entry_points",
+        lambda group: [_EntryPoint("zzz", boom), _EntryPoint("mine", lambda c, g: [ok])],
+    )
+    findings = checks.run_all(None, cfg)
+    assert findings[0] == ok
+    assert (findings[1].check, findings[1].severity) == ("zzz", "error")
+    assert findings[1].sentence == "The check zzz could not run: no such column"
+
+
+def test_built_in_checks_are_registered_like_plugins():
+    names = sorted(e.name for e in checks.entry_points(group=checks.ENTRY_POINT_GROUP))
+    assert names == ["dbt", "freshness", "rows_per_day"]
+    assert (
+        json.loads((FIXTURES / "manifest.json").read_text())["metadata"]["dbt_version"] == "1.11.16"
+    )

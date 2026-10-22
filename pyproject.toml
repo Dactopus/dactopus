@@ -35,6 +35,13 @@ Issues = "https://github.com/Dactopus/dactopus/issues"
 [project.scripts]
 dactopus = "dactopus.cli:main"
 
+# Checks: the entry point's name is the check's name. A plugin registers
+# its own in the same group.
+[project.entry-points."dactopus.checks"]
+dbt = "dactopus.checks:dbt_results"
+freshness = "dactopus.checks:freshness"
+rows_per_day = "dactopus.checks:rows_per_day"
+
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
 

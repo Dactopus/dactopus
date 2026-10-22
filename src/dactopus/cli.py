@@ -10,7 +10,7 @@ from pathlib import Path
 
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
-from . import build, clickhouse, config, ga4, library, shopify
+from . import build, checks, clickhouse, config, ga4, library, report, shopify
 
 COMMANDS = {
     "init": "write a commented sample configuration",
@@ -56,16 +56,20 @@ def _step(name: str, action: str) -> Iterator[None]:
 _AGAIN = "fix the cause and run again; a load resumes where it stopped."
 
 
-def _run(args: argparse.Namespace) -> int:
-    cfg = config.load(args.config)
-    root = library.resolve(cfg.models)
+def _connect(cfg: config.Config) -> clickhouse.Client:
     ch = cfg.clickhouse
     with _step(
         f"connecting to ClickHouse at {ch.host}:{ch.port}",
         "check clickhouse.url, the password and that the server is running.",
     ):
-        client = clickhouse.connect(ch)
-    database = ch.input_database
+        return clickhouse.connect(ch)
+
+
+def _run(args: argparse.Namespace) -> int:
+    cfg = config.load(args.config)
+    root = library.resolve(cfg.models)
+    client = _connect(cfg)
+    database = cfg.clickhouse.input_database
     for package in cfg.packages():
         with _step(f"{package}: creating the input tables in {database}", _AGAIN):
             clickhouse.create_input(client, root, package, database)
@@ -79,7 +83,29 @@ def _run(args: argparse.Namespace) -> int:
             shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
     for package in cfg.packages():
         build.build(cfg, root, package)
-    return 0
+    return _report(cfg, root, client)
+
+
+def _check(args: argparse.Namespace) -> int:
+    cfg = config.load(args.config)
+    root = library.resolve(cfg.models)
+    client = _connect(cfg)
+    for package in cfg.packages():
+        build.test(cfg, root, package)
+    return _report(cfg, root, client)
+
+
+def _report(cfg: config.Config, root: Path, client: clickhouse.Client) -> int:
+    """Measure freshness, run the checks, write the report; 1 on a fail or an error."""
+    for package in cfg.packages():
+        build.freshness(cfg, root, package)
+    findings = checks.run_all(client, cfg)
+    volumes = checks.volumes(client, cfg)
+    text = report.render(cfg, findings, volumes, report.now())
+    path = report.write(cfg, text)
+    print(text)
+    print(f"report: {path}", file=sys.stderr)
+    return 1 if checks.failed(findings) else 0
 
 
 _FAILURES = (
@@ -99,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:
             return _init(args)
         if args.command == "run":
             return _run(args)
+        if args.command == "check":
+            return _check(args)
     except _FAILURES as exc:
         print(f"dactopus {args.command}: {exc}", file=sys.stderr)
         return 1

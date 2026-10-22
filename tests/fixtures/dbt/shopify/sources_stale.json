@@ -1,0 +1,29 @@
+{
+ "metadata": {
+  "dbt_schema_version": "https://schemas.getdbt.com/dbt/sources/v3.json",
+  "dbt_version": "1.11.16",
+  "generated_at": "2026-10-21T23:29:24.915292Z",
+  "invocation_id": "9db0b07b-380d-446f-8d81-7e3d564860d3",
+  "invocation_started_at": "2026-10-21T23:29:24.072929Z",
+  "env": {}
+ },
+ "results": [
+  {
+   "unique_id": "source.dactopus_shopify.shopify_raw.orders",
+   "status": "error",
+   "max_loaded_at": "2026-10-04T06:00:00+00:00",
+   "max_loaded_at_time_ago_in_s": 1531764.90494,
+   "criteria": {
+    "warn_after": {
+     "count": 1,
+     "period": "day"
+    },
+    "error_after": {
+     "count": 3,
+     "period": "day"
+    },
+    "filter": null
+   }
+  }
+ ]
+}

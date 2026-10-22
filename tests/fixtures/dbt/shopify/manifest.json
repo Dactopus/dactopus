@@ -1,0 +1,562 @@
+{
+ "metadata": {
+  "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+  "dbt_version": "1.11.16",
+  "generated_at": "2026-10-21T23:29:28.576417Z"
+ },
+ "nodes": {
+  "model.dactopus_shopify.refunds": {
+   "name": "refunds",
+   "resource_type": "model"
+  },
+  "model.dactopus_shopify.orders": {
+   "name": "orders",
+   "resource_type": "model"
+  },
+  "model.dactopus_shopify.order_lines": {
+   "name": "order_lines",
+   "resource_type": "model"
+  },
+  "model.dactopus_shopify.sales_events": {
+   "name": "sales_events",
+   "resource_type": "model"
+  },
+  "test.dactopus_shopify.sales_events_make_net_total": {
+   "name": "sales_events_make_net_total",
+   "resource_type": "test",
+   "test_metadata": null,
+   "column_name": null,
+   "attached_node": null,
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders",
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.orders_amounts_consistent": {
+   "name": "orders_amounts_consistent",
+   "resource_type": "test",
+   "test_metadata": null,
+   "column_name": null,
+   "attached_node": null,
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders",
+     "model.dactopus_shopify.order_lines"
+    ]
+   }
+  },
+  "test.dactopus_shopify.unique_orders_order_id.fed79b3a6e": {
+   "name": "unique_orders_order_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "unique",
+    "kwargs": {
+     "column_name": "order_id",
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_orders_order_id.cf6c17daed": {
+   "name": "not_null_orders_order_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "order_id",
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_orders_order_date.6910a855fe": {
+   "name": "not_null_orders_order_date",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "order_date",
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_date",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_orders_currency.587e469c1d": {
+   "name": "not_null_orders_currency",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "currency",
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "currency",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_orders_financial_status.71125cbc9d": {
+   "name": "not_null_orders_financial_status",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "financial_status",
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "financial_status",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.accepted_values_orders_financial_status__unpaid__paid__partially_refunded__refunded__voided.e3632067f0": {
+   "name": "accepted_values_orders_financial_status__unpaid__paid__partially_refunded__refunded__voided",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "accepted_values",
+    "kwargs": {
+     "column_name": "financial_status",
+     "values": [
+      "unpaid",
+      "paid",
+      "partially_refunded",
+      "refunded",
+      "voided"
+     ],
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "financial_status",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_orders_fulfillment_status.bed1123f5b": {
+   "name": "not_null_orders_fulfillment_status",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "fulfillment_status",
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "fulfillment_status",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.accepted_values_orders_fulfillment_status__unfulfilled__partially_fulfilled__fulfilled.2d27fd8eb1": {
+   "name": "accepted_values_orders_fulfillment_status__unfulfilled__partially_fulfilled__fulfilled",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "accepted_values",
+    "kwargs": {
+     "column_name": "fulfillment_status",
+     "values": [
+      "unfulfilled",
+      "partially_fulfilled",
+      "fulfilled"
+     ],
+     "model": "{{ get_where_subquery(ref('orders')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "fulfillment_status",
+   "attached_node": "model.dactopus_shopify.orders",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders"
+    ]
+   }
+  },
+  "test.dactopus_shopify.unique_order_lines_line_id.3c9cba7a68": {
+   "name": "unique_order_lines_line_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "unique",
+    "kwargs": {
+     "column_name": "line_id",
+     "model": "{{ get_where_subquery(ref('order_lines')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "line_id",
+   "attached_node": "model.dactopus_shopify.order_lines",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.order_lines"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_order_lines_line_id.33f5387ccc": {
+   "name": "not_null_order_lines_line_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "line_id",
+     "model": "{{ get_where_subquery(ref('order_lines')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "line_id",
+   "attached_node": "model.dactopus_shopify.order_lines",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.order_lines"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_order_lines_order_id.cb6307b41d": {
+   "name": "not_null_order_lines_order_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "order_id",
+     "model": "{{ get_where_subquery(ref('order_lines')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.order_lines",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.order_lines"
+    ]
+   }
+  },
+  "test.dactopus_shopify.relationships_order_lines_order_id__order_id__ref_orders_.69cc0335cb": {
+   "name": "relationships_order_lines_order_id__order_id__ref_orders_",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "relationships",
+    "kwargs": {
+     "column_name": "order_id",
+     "to": "ref('orders')",
+     "field": "order_id",
+     "model": "{{ get_where_subquery(ref('order_lines')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.order_lines",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders",
+     "model.dactopus_shopify.order_lines"
+    ]
+   }
+  },
+  "test.dactopus_shopify.unique_refunds_refund_id.75ab505588": {
+   "name": "unique_refunds_refund_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "unique",
+    "kwargs": {
+     "column_name": "refund_id",
+     "model": "{{ get_where_subquery(ref('refunds')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "refund_id",
+   "attached_node": "model.dactopus_shopify.refunds",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.refunds"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_refunds_refund_id.940c260f56": {
+   "name": "not_null_refunds_refund_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "refund_id",
+     "model": "{{ get_where_subquery(ref('refunds')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "refund_id",
+   "attached_node": "model.dactopus_shopify.refunds",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.refunds"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_refunds_refund_date.609e0f8bee": {
+   "name": "not_null_refunds_refund_date",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "refund_date",
+     "model": "{{ get_where_subquery(ref('refunds')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "refund_date",
+   "attached_node": "model.dactopus_shopify.refunds",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.refunds"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_refunds_order_id.3653d9c855": {
+   "name": "not_null_refunds_order_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "order_id",
+     "model": "{{ get_where_subquery(ref('refunds')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.refunds",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.refunds"
+    ]
+   }
+  },
+  "test.dactopus_shopify.relationships_refunds_order_id__order_id__ref_orders_.b4447c4023": {
+   "name": "relationships_refunds_order_id__order_id__ref_orders_",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "relationships",
+    "kwargs": {
+     "column_name": "order_id",
+     "to": "ref('orders')",
+     "field": "order_id",
+     "model": "{{ get_where_subquery(ref('refunds')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.refunds",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders",
+     "model.dactopus_shopify.refunds"
+    ]
+   }
+  },
+  "test.dactopus_shopify.unique_sales_events_event_id.9ef869cdf0": {
+   "name": "unique_sales_events_event_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "unique",
+    "kwargs": {
+     "column_name": "event_id",
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "event_id",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_sales_events_event_id.7cccf8434e": {
+   "name": "not_null_sales_events_event_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "event_id",
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "event_id",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_sales_events_event_date.42932eea37": {
+   "name": "not_null_sales_events_event_date",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "event_date",
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "event_date",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_sales_events_amount.182d2faa92": {
+   "name": "not_null_sales_events_amount",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "amount",
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "amount",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_sales_events_event_type.5abb7cef1e": {
+   "name": "not_null_sales_events_event_type",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "event_type",
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "event_type",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.accepted_values_sales_events_event_type__order__refund__cancellation.79250a8834": {
+   "name": "accepted_values_sales_events_event_type__order__refund__cancellation",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "accepted_values",
+    "kwargs": {
+     "column_name": "event_type",
+     "values": [
+      "order",
+      "refund",
+      "cancellation"
+     ],
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "event_type",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.not_null_sales_events_order_id.6bbfaa9ef3": {
+   "name": "not_null_sales_events_order_id",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "not_null",
+    "kwargs": {
+     "column_name": "order_id",
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  },
+  "test.dactopus_shopify.relationships_sales_events_order_id__order_id__ref_orders_.68a541a62b": {
+   "name": "relationships_sales_events_order_id__order_id__ref_orders_",
+   "resource_type": "test",
+   "test_metadata": {
+    "name": "relationships",
+    "kwargs": {
+     "column_name": "order_id",
+     "to": "ref('orders')",
+     "field": "order_id",
+     "model": "{{ get_where_subquery(ref('sales_events')) }}"
+    },
+    "namespace": null
+   },
+   "column_name": "order_id",
+   "attached_node": "model.dactopus_shopify.sales_events",
+   "depends_on": {
+    "nodes": [
+     "model.dactopus_shopify.orders",
+     "model.dactopus_shopify.sales_events"
+    ]
+   }
+  }
+ },
+ "unit_tests": {
+  "unit_test.dactopus_shopify.order_lines.order_line_discounts_without_tax": {
+   "name": "order_line_discounts_without_tax",
+   "model": "order_lines"
+  },
+  "unit_test.dactopus_shopify.refunds.refund_lines_of_one_line_item": {
+   "name": "refund_lines_of_one_line_item",
+   "model": "refunds"
+  }
+ }
+}

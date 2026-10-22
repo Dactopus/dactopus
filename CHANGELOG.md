@@ -30,3 +30,16 @@ a minor release may change the command line and the configuration file.
   `dbt build` and a dbt profile the runner writes, not the one in the
   package; the profile and dbt's output go to `.dactopus/` next to the
   configuration.
+- Checks and the report. A check is a function of a ClickHouse client and
+  the configuration that returns findings of one shape (check, object,
+  severity, observed, expected, a sentence for the owner), registered
+  through the entry point group `dactopus.checks`. Built in: the models,
+  tests and unit tests of the last dbt run, the freshness of the input
+  against the package's thresholds (`dbt source freshness`), and a day
+  without rows in the last week of `events` or `orders`. `dactopus run`
+  ends with the report, `dactopus check` runs `dbt test` and the checks
+  without loading or building; both write it to the terminal and to
+  `.dactopus/report.md` (freshness, what did not pass, rows per day for
+  the last week against the four before, then every finding) and exit
+  with 1 on a `fail` or `error`. A dbt run with failing tests or models
+  no longer stops the command: its results are in the report.
