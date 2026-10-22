@@ -376,7 +376,13 @@ class Volume:
 
     @property
     def gaps(self) -> list[date]:
-        return [day for day, rows in self.days.items() if rows == 0]
+        """Days without rows where the same weekday had rows, or no history to say."""
+        return [day for day, rows in self.days.items() if rows == 0 and self.typical[day] != 0]
+
+    @property
+    def quiet(self) -> list[date]:
+        """Days without rows, as the same weekday in the weeks before: a small shop's usual."""
+        return [day for day, rows in self.days.items() if rows == 0 and self.typical[day] == 0]
 
 
 def volumes(client: Client, config: Config, at: datetime) -> list[Volume]:
@@ -514,6 +520,19 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                     f"no rows on {', '.join(day.isoformat() for day in gaps)}",
                     "rows every day",
                     f"{sentence}.",
+                )
+            )
+        elif volume.quiet:
+            quiet = volume.quiet
+            findings.append(
+                Finding(
+                    "rows per day",
+                    table,
+                    "pass",
+                    f"no rows on {', '.join(day.isoformat() for day in quiet)}, as before",
+                    "rows every day the same weekday had rows",
+                    f"{table} ({package}) has no rows for {_days(quiet)}, as on the same "
+                    f"weekday in the {PAST_WEEKS} weeks before.",
                 )
             )
         else:

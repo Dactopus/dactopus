@@ -368,6 +368,34 @@ def test_a_week_without_rows_says_so_without_a_spread(tmp_path):
     )
 
 
+def test_a_weekday_without_rows_as_usual_is_not_a_gap(tmp_path):
+    cfg = _config(tmp_path)
+    # No orders on Sundays; 18 October 2026 is a Sunday.
+    counts = {d: n for d, n in _daily(date(2026, 10, 20), 60).items() if d.weekday() != 6}
+    [finding] = checks.rows_per_day(_Client(counts), cfg)
+    assert finding.severity == "pass"
+    assert finding.sentence == (
+        "orders (shopify) has no rows for 2026-10-18, as on the same weekday in the 4 weeks before."
+    )
+
+
+def test_a_quiet_shop_does_not_warn(tmp_path):
+    cfg = _config(tmp_path)
+    [finding] = checks.rows_per_day(_Client({date(2026, 9, 1): 3}), cfg)
+    assert finding.severity == "pass"
+    assert finding.observed.startswith("no rows on 2026-10-14, ")
+
+
+def test_a_day_without_rows_and_without_history_is_a_gap(tmp_path):
+    cfg = _config(tmp_path)
+    counts = {date(2026, 10, 18): 5, date(2026, 10, 20): 4}
+    [finding] = checks.rows_per_day(_Client(counts), cfg)
+    assert finding.severity == "warn"
+    assert finding.sentence == (
+        "orders (shopify) has no rows for 2026-10-19; the other days of that week have 4 to 5."
+    )
+
+
 def test_rows_only_for_today_wait_for_the_day_to_end(tmp_path):
     cfg = _config(tmp_path)
     [finding] = checks.rows_per_day(_Client({date(2026, 10, 21): 3}), cfg)
