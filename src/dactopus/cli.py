@@ -10,7 +10,7 @@ from pathlib import Path
 
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
-from . import build, checks, clickhouse, config, ga4, library, report, shopify
+from . import build, checks, clickhouse, config, ga4, library, report, serve, shopify
 
 COMMANDS = {
     "init": "write a commented sample configuration",
@@ -95,6 +95,12 @@ def _check(args: argparse.Namespace) -> int:
     return _report(cfg, root, client)
 
 
+def _serve(args: argparse.Namespace) -> int:
+    """MCP over stdio: stdout is the protocol, so nothing else is printed there."""
+    cfg = config.load(args.config)
+    return serve.serve(cfg, library.resolve(cfg.models))
+
+
 def _report(cfg: config.Config, root: Path, client: clickhouse.Client) -> int:
     """Measure freshness, run the checks, write the report; 1 on a fail or an error."""
     for package in cfg.packages():
@@ -115,6 +121,7 @@ _FAILURES = (
     ga4.LoadError,
     shopify.LoadError,
     build.BuildError,
+    serve.ServeError,
     StepError,
 )
 
@@ -128,8 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             return _run(args)
         if args.command == "check":
             return _check(args)
+        return _serve(args)
     except _FAILURES as exc:
         print(f"dactopus {args.command}: {exc}", file=sys.stderr)
         return 1
-    print(f"dactopus {args.command}: not implemented yet", file=sys.stderr)
-    return 2

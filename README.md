@@ -9,8 +9,7 @@ ClickHouse, builds the canonical e-commerce tables, checks them, and
 serves their [Apache Ossie](https://github.com/apache/ossie) models to AI
 agents over [MCP](https://modelcontextprotocol.io).
 
-Under construction: nothing is released. `init`, `run` and `check` work;
-`serve` does not yet.
+Under construction: nothing is released. Every command works.
 
 ## How the parts fit
 
@@ -95,6 +94,51 @@ without stopping the others:
 [project.entry-points."dactopus.checks"]
 reconciliation = "my_checks:reconcile_with_shopify"
 ```
+
+## Serving the models
+
+`dactopus serve` runs the MCP server of dactopus-ossie-clickhouse over
+stdio, for an AI agent to start as a subprocess. It serves the models of
+the domains the configured packages cover, read as one model:
+
+| Package | Model file of the library |
+| --- | --- |
+| GA4 | `entities/web_analytics.yaml` |
+| Shopify | `entities/commerce.yaml` |
+
+The models name their tables without a database; the executor reads them
+in `clickhouse.database`, as the configured ClickHouse user. Everything the
+agent sees and runs is limited to that user, so give the agent its own
+user with read grants on the canonical database.
+
+An agent starts the command from a directory of its own and with a short
+`PATH`, so give absolute paths to the command and the configuration, and
+set the variable `clickhouse.password_env` names (`CLICKHOUSE_PASSWORD`
+below) in the server's environment. For
+[Claude Code](https://docs.claude.com/en/docs/claude-code/mcp):
+
+```bash
+claude mcp add dactopus -e CLICKHOUSE_PASSWORD=... -- \
+  /ABSOLUTE/PATH/TO/dactopus serve --config /ABSOLUTE/PATH/TO/dactopus.yaml
+```
+
+For Claude Desktop, in `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "dactopus": {
+      "command": "/ABSOLUTE/PATH/TO/dactopus",
+      "args": ["serve", "--config", "/ABSOLUTE/PATH/TO/dactopus.yaml"],
+      "env": {"CLICKHOUSE_PASSWORD": "..."}
+    }
+  }
+}
+```
+
+The tools the agent gets and how to check the server without one:
+[MCP setup](https://github.com/Dactopus/dactopus-ossie-clickhouse/blob/main/docs/mcp-setup.md)
+of the executor.
 
 ## Development
 

@@ -20,7 +20,7 @@ def _base() -> dict:
             "input_database": "raw",
             "database": "canonical",
         },
-        "models": {"version": "v0.4.1"},
+        "models": {"version": "v0.5.3"},
         "packages": {
             "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
             "shopify": {"shop": "dactopus-dev", "vars": {"shopify_timezone": "America/New_York"}},
@@ -33,7 +33,7 @@ def test_sample_loads(tmp_path):
     config.write_sample(path)
     loaded = config.load(path, environ={})
     assert loaded.clickhouse.database == "dactopus"
-    assert loaded.models.version == "v0.4.1"
+    assert loaded.models.version == "v0.5.3"
     assert list(loaded.packages()) == ["ga4", "shopify"]
     assert loaded.workdir == tmp_path.resolve() / ".dactopus"
 
@@ -125,7 +125,7 @@ def test_unknown_key_is_refused(tmp_path):
 
 def test_models_version_or_path(tmp_path):
     data = _base()
-    data["models"] = {"version": "v0.4.1", "path": "lib"}
+    data["models"] = {"version": "v0.5.3", "path": "lib"}
     with pytest.raises(ConfigError, match="either version"):
         config.load(_write(tmp_path, data), environ={})
     data["models"] = {"version": "0.4.1"}

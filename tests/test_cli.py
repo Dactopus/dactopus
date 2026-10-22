@@ -9,11 +9,6 @@ def test_commands_are_the_public_surface():
     assert list(COMMANDS) == ["init", "run", "check", "serve"]
 
 
-def test_serve_is_declared_but_not_built(capsys):
-    assert main(["serve", "--config", "nowhere.yaml"]) == 2
-    assert "not implemented yet" in capsys.readouterr().err
-
-
 def test_unknown_command_is_refused():
     with pytest.raises(SystemExit) as exit_info:
         main(["load"])
@@ -28,7 +23,7 @@ def test_init_writes_the_sample(tmp_path, capsys):
     assert "exists" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("command", ["run", "check"])
+@pytest.mark.parametrize("command", ["run", "check", "serve"])
 def test_command_without_configuration_points_to_init(command, tmp_path, capsys):
     assert main([command, "--config", str(tmp_path / "dactopus.yaml")]) == 1
     assert "dactopus init" in capsys.readouterr().err
@@ -36,7 +31,7 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
 
 def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.4.1", f"path: {tmp_path}"))
+    path.write_text(config.SAMPLE.replace("version: v0.5.3", f"path: {tmp_path}"))
     (tmp_path / "sources").mkdir()
 
     def refuse(client, library, package, database):
