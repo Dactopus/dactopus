@@ -115,6 +115,34 @@ def test_a_model_error_names_the_table_and_dbt_message(tmp_path):
     assert error.sentence.startswith("orders could not be built: Database Error in model orders")
 
 
+def test_results_that_ran_nothing_are_left_out(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg)
+    results = json.loads((FIXTURES / "run_results_build_pass.json").read_text())
+    results["results"].append(
+        {"unique_id": "exposure.dactopus_shopify.dashboard", "status": "no-op", "message": None}
+    )
+    (cfg.workdir / "shopify" / "target" / "run_results.json").write_text(json.dumps(results))
+    findings = checks.dbt_results(None, cfg)
+    assert _count(findings) == {"pass": 32, "skip": 0, "warn": 1, "fail": 0, "error": 0}
+
+
+def test_a_ref_in_double_quotes_names_the_table(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_test_fail.json")
+    path = cfg.workdir / "shopify" / "target" / "manifest.json"
+    manifest = json.loads(path.read_text())
+    for node in manifest["nodes"].values():
+        metadata = node.get("test_metadata") or {}
+        if metadata.get("name") == "relationships":
+            metadata["kwargs"]["to"] = 'ref("orders")'
+    path.write_text(json.dumps(manifest))
+    findings = checks.dbt_results(None, cfg)
+    assert "2 rows of order_lines have no matching order_id in orders." in _sentences(
+        findings, "fail"
+    )
+
+
 def test_a_package_without_a_run_is_an_error(tmp_path):
     cfg = _config(tmp_path, "ga4", "shopify")
     _target(cfg, run_results="run_results_build_pass.json")

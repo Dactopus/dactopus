@@ -47,7 +47,7 @@ def _checks(findings: list[Finding]) -> list[str]:
     if not findings:
         lines.append("No checks ran.")
     elif not bad and not counted["skip"]:
-        lines.append(f"Yes: all {total} checks passed.")
+        lines.append("Yes: the check passed." if total == 1 else f"Yes: all {total} checks passed.")
     else:
         parts = []
         if counted["fail"]:

@@ -83,6 +83,11 @@ def test_three_answers_come_first_when_all_is_well(tmp_path):
     assert "- pass: orders.order_id: No order_id repeats in orders." in lines
 
 
+def test_a_single_check_is_said_in_the_singular(tmp_path):
+    text = report.render(_config(tmp_path), [OK], [], NOW)
+    assert "Yes: the check passed." in text.splitlines()
+
+
 def test_what_did_not_pass_is_listed_worst_first(tmp_path):
     cfg = _config(tmp_path)
     text = report.render(cfg, [FRESH, OK, WARN, FAIL, SKIP], [], NOW)
