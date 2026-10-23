@@ -598,8 +598,8 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
                         "error",
                         _first_line(exc),
                         expected,
-                        f"The days of {table} ({package}) could not be counted; build it "
-                        "with `dactopus run`.",
+                        f"The days of {table} ({package}) could not be counted; check that "
+                        "the ClickHouse user can read it and run again.",
                     )
                 )
                 continue
@@ -662,6 +662,10 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
 
 
 def _share(rows: int, of: int) -> str:
-    """The share of rows in of, never 0.0% when a row is counted."""
+    """The share of rows in of, never 0.0% when a row is counted nor 100.0% when one is not."""
     share = rows / of
-    return "under 0.1%" if share < 0.001 else f"{share:.1%}"
+    if share < 0.001:
+        return "under 0.1%"
+    if share > 0.999 and rows < of:
+        return "over 99.9%"
+    return f"{share:.1%}"

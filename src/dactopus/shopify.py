@@ -61,7 +61,8 @@ QUERY = f"""query ($cursor: String, $filter: String) {{
   }}
 }}"""
 
-# The shop's time zone, Settings > General in the admin; any app can read it.
+# The shop's time zone, Settings > General in the admin; read with API
+# 2026-10 on 2026-10-23 by an app with read_orders.
 ZONE_QUERY = "{ shop { ianaTimezone } }"
 
 Fetch = Callable[[dict[str, Any]], dict[str, Any]]
