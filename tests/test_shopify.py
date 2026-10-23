@@ -133,3 +133,29 @@ def test_unreachable_store_says_run_again(monkeypatch):
         shopify.LoadError, match="cannot reach dactopus-dev.myshopify.com.*run again"
     ):
         shopify.graphql("dactopus-dev", "token")({"cursor": None, "filter": ""})
+
+
+# The answer to shopify.ZONE_QUERY on the development store, through the
+# Shopify connector in Claude on 2026-10-23, whose API version is older
+# than 2026-10; the runner's own 2026-10 request read the same zone that day.
+SHOP_ZONE = {"data": {"shop": {"ianaTimezone": "America/New_York"}}}
+
+
+def test_the_shop_time_zone_passes(monkeypatch):
+    sent = []
+    monkeypatch.setattr(
+        shopify, "_post", lambda url, data, headers: sent.append(json.loads(data)) or SHOP_ZONE
+    )
+    shopify.check_time_zone("dactopus-dev", "token", "America/New_York")
+    assert sent == [{"query": shopify.ZONE_QUERY, "variables": {}}]
+
+
+def test_another_time_zone_than_the_shop_is_refused(monkeypatch):
+    monkeypatch.setattr(shopify, "_post", lambda url, data, headers: SHOP_ZONE)
+    with pytest.raises(shopify.LoadError) as refused:
+        shopify.check_time_zone("dactopus-dev", "token", "Europe/Berlin")
+    assert str(refused.value) == (
+        "shopify: the time zone of dactopus-dev.myshopify.com is America/New_York, and "
+        "store.timezone is Europe/Berlin; set store.timezone to America/New_York, the shop's "
+        "(Settings > General in the Shopify admin)."
+    )

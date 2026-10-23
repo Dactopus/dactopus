@@ -33,10 +33,26 @@ The executor knows nothing of Dactopus.
 | `dactopus serve` | Serves the models over MCP |
 
 One configuration file describes an installation: the ClickHouse
-connection, the databases for raw input and canonical tables, the version
-of the models library, and the packages to run. `dactopus init` writes it
-with a comment on every field. Secrets stay out of it: the file names the
-environment variables that hold them.
+connection, the databases for raw input and canonical tables, the store's
+time zone, the version of the models library, and the packages to run.
+`dactopus init` writes it with a comment on every field. Secrets stay out
+of it: the file names the environment variables that hold them.
+
+`store.timezone` is the store's time zone, an IANA name such as
+`America/New_York` (Settings > General in the Shopify admin), and the days
+of the installation are its days. The runner passes it to every package
+that takes a time zone (`shopify_timezone` for Shopify, which the
+package's `vars` may not set) and to the executor in `serve`, so "today"
+in an agent's question is the store's date. With Shopify configured,
+`dactopus run` first reads the shop's zone and refuses a `store.timezone`
+that differs. It then counts, in the daily tables of each package that
+takes a time zone, the rows whose date is not the day of their time in
+`store.timezone`. Such a row means the tables were built in another zone:
+the Shopify models are incremental, and a build after the zone changed
+would leave the orders it does not rebuild on the days of the old one. The
+run stops before loading, with the command that rebuilds the package,
+`dactopus run --full-refresh shopify`; the agent keeps answering from the
+current tables until then.
 
 `dactopus run` loads each source into its package's input tables, then
 runs `dbt build` of each package. A load reads only what changed:
@@ -83,8 +99,8 @@ run, or when no check ran at all, for cron.
 The report answers three questions first: how fresh the data is, whether
 every check passed and in words which did not, and how many rows each
 canonical table got per day over its last seven days that are over against
-the four weeks before. A Shopify day is over at midnight in the shop's time
-zone (`shopify_timezone`); a GA4 daily table is a day that is over. Every
+the four weeks before. A Shopify day is over at midnight in `store.timezone`;
+a GA4 daily table is a day that is over. Every
 finding follows below.
 
 The built-in checks:
@@ -94,6 +110,7 @@ The built-in checks:
 | `dbt` | `run_results.json` and `manifest.json` of the last dbt run | Each model, test and unit test of the package, as a sentence with the count of failing rows |
 | `freshness` | `sources.json` of `dbt source freshness` | The age of the latest input row against the package's `warn_after` and `error_after` |
 | `rows_per_day` | The canonical tables | A day without rows in the last seven days that are over of a table the package marks as a gap in its `deployment.yml` (`events` for GA4, `orders` for Shopify), unless the same weekday had none in the four weeks before |
+| `time_zone` | The daily tables with a time column in `deployment.yml` | Rows whose date is not the day of their time in `store.timezone`: a `fail` for a package built in it (Shopify), a `warn` with the share of rows for one whose days are its source's (GA4, the property's zone), counted over the days `rows_per_day` reads |
 
 A check is a function of a ClickHouse client and the configuration that
 returns findings; a finding names the check, the object, a severity

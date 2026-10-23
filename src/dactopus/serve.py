@@ -50,9 +50,10 @@ def serve(cfg: Config, library: Path) -> int:
     """Run the executor's MCP server over stdio until the client closes it.
 
     The URL holds the password, so it goes to the executor in-process,
-    never in a command line other processes can read.
+    never in a command line other processes can read. "Today" in a
+    question is the date in store.timezone.
     """
     from dactopus_ossie_clickhouse import cli as executor
 
     files = [str(path) for path in model_files(cfg, library)]
-    return executor.main(["serve", *files, "--url", url(cfg)])
+    return executor.main(["serve", *files, "--url", url(cfg), "--time-zone", cfg.store.timezone])

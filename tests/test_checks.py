@@ -7,6 +7,7 @@ import yaml
 from clickhouse_connect.driver.exceptions import DatabaseError
 
 from dactopus import checks, config, library
+from dactopus.build import Misdated
 
 # Output of dbt 1.11.16 with dbt-clickhouse 1.10 over the shopify package of
 # dactopus-data-models v0.4.1 and the library's tests/shopify/fixture.sql,
@@ -39,10 +40,10 @@ def _clock(monkeypatch):
     monkeypatch.setattr(checks, "now", lambda: NOW)
 
 
-def _config(tmp_path, *packages):
+def _config(tmp_path, *packages, zone="UTC"):
     path = tmp_path / "dactopus.yaml"
     known = {
-        "shopify": {"shop": "s", "vars": {"shopify_timezone": "UTC"}},
+        "shopify": {"shop": "s"},
         "ga4": {"project": "p", "dataset": "a.b"},
     }
     path.write_text(
@@ -53,6 +54,7 @@ def _config(tmp_path, *packages):
                     "input_database": "raw",
                     "database": "canonical",
                 },
+                "store": {"timezone": zone},
                 "models": {"path": str(FIXTURE_LIBRARY)},
                 "packages": {p: known[p] for p in packages or ("shopify",)},
             }
@@ -337,43 +339,12 @@ def test_the_day_not_over_yet_is_left_out(tmp_path):
     assert date(2026, 10, 21) not in orders.days
 
 
-def test_days_are_over_in_the_shop_time_zone(tmp_path):
-    cfg = _config(tmp_path)
-    cfg.shopify.vars["shopify_timezone"] = "America/New_York"
+def test_days_are_over_in_the_store_time_zone(tmp_path):
+    cfg = _config(tmp_path, zone="America/New_York")
     # 02:00 UTC on 21 October is 22:00 on 20 October in New York.
     at = datetime(2026, 10, 21, 2, 0, tzinfo=UTC)
     [orders, _] = checks.volumes(_Client(_daily(date(2026, 10, 20), 60)), cfg, at)
     assert orders.latest == date(2026, 10, 19)
-
-
-def test_the_time_zone_defaults_to_the_package(tmp_path):
-    root = tmp_path / "models"
-    (root / "sources" / "shopify").mkdir(parents=True)
-    (root / "sources" / "shopify" / "dbt_project.yml").write_text(
-        "vars:\n  shopify_timezone: Asia/Tokyo\n"
-    )
-    (root / "sources" / "shopify" / "deployment.yml").write_text(
-        (FIXTURE_LIBRARY / "sources" / "shopify" / "deployment.yml").read_text()
-    )
-    path = tmp_path / "dactopus.yaml"
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "clickhouse": {
-                    "url": "http://db.local:8123",
-                    "input_database": "raw",
-                    "database": "canonical",
-                },
-                "models": {"path": str(root)},
-                "packages": {"shopify": {"shop": "s"}},
-            }
-        )
-    )
-    cfg = config.load(path, environ={})
-    # 20:00 UTC on 21 October is already 22 October in Tokyo.
-    at = datetime(2026, 10, 21, 20, 0, tzinfo=UTC)
-    [orders, _] = checks.volumes(_Client(_daily(date(2026, 10, 21), 60)), cfg, at)
-    assert orders.latest == date(2026, 10, 21)
 
 
 def test_a_day_without_rows_up_to_yesterday_is_a_gap(tmp_path):
@@ -479,12 +450,10 @@ def test_a_package_without_a_time_zone_counts_to_its_latest_day(tmp_path, monkey
     assert events.latest == date(2026, 10, 21)
 
 
-def test_the_time_zone_comes_from_the_declared_variable(tmp_path, monkeypatch):
-    cfg = _config(tmp_path)
-    cfg.packages()["shopify"].vars["store_zone"] = "Asia/Tokyo"
+def test_a_package_with_a_time_zone_variable_has_the_store_days(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, zone="Asia/Tokyo")
     _declare(monkeypatch, library.Daily("orders", "order_date", gap=True), time_zone="store_zone")
-    # 20:00 UTC on 21 October is already 22 October in Tokyo, and still
-    # 21 October in UTC, the zone of shopify_timezone.
+    # 20:00 UTC on 21 October is already 22 October in Tokyo.
     at = datetime(2026, 10, 21, 20, 0, tzinfo=UTC)
     [orders] = checks.volumes(_Client(_daily(date(2026, 10, 21), 60)), cfg, at)
     assert orders.latest == date(2026, 10, 21)
@@ -518,7 +487,81 @@ def test_run_all_keeps_going_when_a_plugin_breaks(tmp_path, monkeypatch):
 
 def test_built_in_checks_are_registered_like_plugins():
     names = sorted(e.name for e in checks.entry_points(group=checks.ENTRY_POINT_GROUP))
-    assert names == ["dbt", "freshness", "rows_per_day"]
+    assert names == ["dbt", "freshness", "rows_per_day", "time_zone"]
     assert (
         json.loads((FIXTURES / "manifest.json").read_text())["metadata"]["dbt_version"] == "1.11.16"
     )
+
+
+def _misdated(monkeypatch, **counts):
+    """build.misdated answers these counts per table, and records the days it is given."""
+    asked = {}
+
+    def fake(client, database, counted, zone, days=None):
+        asked[counted.table] = (zone, days)
+        found = counts[counted.table]
+        if isinstance(found, Exception):
+            raise found
+        return found
+
+    monkeypatch.setattr(checks, "misdated", fake)
+    return asked
+
+
+def test_time_zone_passes_for_tables_built_in_the_store_zone(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, zone="America/New_York")
+    asked = _misdated(monkeypatch, orders=Misdated(0, 16), refunds=Misdated(0, 6))
+    findings = checks.time_zone(None, cfg)
+    assert [(f.object, f.severity) for f in findings] == [("orders", "pass"), ("refunds", "pass")]
+    assert (
+        findings[0].sentence == "Every row of orders (shopify) is on its day in America/New_York."
+    )
+    # A package built in the zone is counted whole.
+    assert asked == {"orders": ("America/New_York", None), "refunds": ("America/New_York", None)}
+
+
+def test_time_zone_fails_for_tables_built_in_another_zone(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, zone="America/New_York")
+    _misdated(monkeypatch, orders=Misdated(1, 16), refunds=Misdated(0, 0))
+    orders, refunds = checks.time_zone(None, cfg)
+    assert (orders.severity, orders.observed) == ("fail", "1 of 16 rows on another day")
+    assert orders.sentence == (
+        "1 row of orders (shopify) is on another day than in America/New_York: the table was "
+        "built in another time zone. Run `dactopus run --full-refresh shopify` once to "
+        "rebuild it."
+    )
+    assert (refunds.severity, refunds.sentence) == (
+        "skip",
+        "refunds (shopify) has no rows to check the days of.",
+    )
+
+
+def test_time_zone_warns_for_a_source_in_another_zone(tmp_path, monkeypatch):
+    """GA4: the days are the property's; counted over the days rows_per_day reads."""
+    cfg = _config(tmp_path, "ga4", zone="America/New_York")
+    first, last = date(2020, 12, 28), date(2021, 1, 31)
+    asked = _misdated(
+        monkeypatch,
+        events=Misdated(892_970, 4_295_584, first, last),
+        sessions=Misdated(0, 10, first, last),
+        purchases=DatabaseError("Code: 60. Unknown table"),
+    )
+    events, sessions, purchases = checks.time_zone(None, cfg)
+    assert asked["events"] == ("America/New_York", 35)
+    assert events.severity == "warn"
+    assert (
+        events.observed == "892,970 of 4,295,584 rows on another day, from 2020-12-28 to 2021-01-31"
+    )
+    assert events.sentence.startswith(
+        "20.8% of the rows of events (ga4) from 2020-12-28 to 2021-01-31 are on another day in "
+        "America/New_York: the source counts its days in another time zone"
+    )
+    assert sessions.severity == "pass"
+    assert (purchases.severity, purchases.observed) == ("error", "Code: 60. Unknown table")
+
+
+def test_time_zone_leaves_out_tables_without_a_time_column(tmp_path, monkeypatch):
+    cfg = _config(tmp_path)
+    _declare(monkeypatch, library.Daily("orders", "order_date", gap=True), time_zone="z")
+    _misdated(monkeypatch)
+    assert checks.time_zone(None, cfg) == []

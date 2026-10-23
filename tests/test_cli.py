@@ -69,7 +69,10 @@ def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     def refuse(client, library, package, database):
         raise DatabaseError("Code: 497. Not enough privileges")
 
+    monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
+    monkeypatch.setattr(cli.shopify, "check_time_zone", lambda shop, token, zone: None)
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
+    monkeypatch.setattr(cli.build, "check_zone", lambda *args: None)
     monkeypatch.setattr(cli.clickhouse, "create_input", refuse)
     assert main(["run", "--config", str(path)]) == 1
     err = capsys.readouterr().err
@@ -123,12 +126,20 @@ def test_run_rebuilds_the_named_packages_after_the_usual_load(tmp_path, monkeypa
     steps = []
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
     monkeypatch.setattr(
+        cli.build, "check_zone", lambda client, cfg, root, refresh: steps.append(("zone", refresh))
+    )
+    monkeypatch.setattr(
         cli.clickhouse, "create_input", lambda *args: steps.append(("input", args[2]))
     )
     monkeypatch.setattr(cli.ga4, "BigQueryExport", lambda settings: object())
     monkeypatch.setattr(cli.ga4, "lookback_days", lambda settings, root: 3)
     monkeypatch.setattr(cli.ga4, "load", lambda *args: steps.append(("load", "ga4")))
     monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
+    monkeypatch.setattr(
+        cli.shopify,
+        "check_time_zone",
+        lambda shop, token, zone: steps.append(("shop zone", zone)),
+    )
     monkeypatch.setattr(cli.shopify, "graphql", lambda shop, token: object())
     monkeypatch.setattr(cli.shopify, "load", lambda *args: steps.append(("load", "shopify")))
     monkeypatch.setattr(
@@ -139,6 +150,8 @@ def test_run_rebuilds_the_named_packages_after_the_usual_load(tmp_path, monkeypa
     monkeypatch.setattr(cli, "_report", lambda cfg, root, client: 0)
     assert main(["run", "--config", str(path), "--full-refresh", "shopify"]) == 0
     assert steps == [
+        ("shop zone", "UTC"),
+        ("zone", {"shopify"}),
         ("input", "ga4"),
         ("input", "shopify"),
         ("load", "ga4"),
@@ -175,7 +188,7 @@ def test_check_builds_the_report_over_the_library_fixtures(
     path.write_text(
         config.SAMPLE.replace("dactopus_raw", raw)
         .replace("database: dactopus\n", f"database: {database}\n")
-        .replace("shopify_timezone: UTC", "shopify_timezone: America/New_York")
+        .replace("timezone: UTC", "timezone: America/New_York")
     )
     cfg = config.load(path)
     try:
@@ -229,6 +242,7 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
     monkeypatch.setattr(cli.ga4, "BigQueryExport", lambda settings: object())
     monkeypatch.setattr(cli.ga4, "load", lambda *args: None)
     monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
+    monkeypatch.setattr(cli.shopify, "check_time_zone", lambda shop, token, zone: None)
     monkeypatch.setattr(cli.shopify, "graphql", lambda shop, token: object())
     monkeypatch.setattr(cli.shopify, "load", lambda *args: None)
     tables = {

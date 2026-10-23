@@ -98,7 +98,14 @@ def _run(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
     refresh = full_refresh(args.full_refresh, cfg)
     root = _library(cfg)
+    # Refused before anything is written: a zone other than the shop's, or
+    # canonical tables built in another zone.
+    if cfg.shopify is not None:
+        token = shopify.access_token(cfg.shopify)
+        shopify.check_time_zone(cfg.shopify.shop, token, cfg.store.timezone)
     client = _connect(cfg)
+    with _step(f"build: counting the days of the tables in {cfg.clickhouse.database}", _AGAIN):
+        build.check_zone(client, cfg, root, refresh)
     database = cfg.clickhouse.input_database
     for package in cfg.packages():
         with _step(f"{package}: creating the input tables in {database}", _AGAIN):
@@ -108,7 +115,6 @@ def _run(args: argparse.Namespace) -> int:
         with _step(f"ga4: loading into {database}.{ga4.TABLE}", _AGAIN):
             ga4.load(client, export, database, ga4.lookback_days(cfg.ga4, root))
     if cfg.shopify is not None:
-        token = shopify.access_token(cfg.shopify)
         with _step(f"shopify: loading orders into {database}", _AGAIN):
             shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
     for package in cfg.packages():

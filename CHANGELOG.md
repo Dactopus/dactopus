@@ -14,8 +14,9 @@ a minor release may change the command line and the configuration file.
 - The configuration file `dactopus.yaml`: the ClickHouse connection, over
   TLS for an `https://` URL (port 8443 by default), with the password from
   an environment variable, the databases for input and
-  canonical tables, the models library by release or by path, and the GA4
-  and Shopify packages with their dbt variables.
+  canonical tables, the store's time zone (`store.timezone`, required),
+  the models library by release or by path, and the GA4 and Shopify
+  packages with their dbt variables.
 - `dactopus init` writes a commented sample configuration.
 - A release of the models library is downloaded once from GitHub into
   `~/.cache/dactopus/`.
@@ -42,10 +43,11 @@ a minor release may change the command line and the configuration file.
   `dactopus run` ends with the report, `dactopus check` runs `dbt test`
   and the checks without loading or building; both write it to the
   terminal and to `.dactopus/report.md` (freshness, what did not pass,
-  rows per day for the last seven days that are over, in the shop's time
-  zone for Shopify, against the four weeks before, then every finding) and
-  exit with 1 on a `fail` or `error` or when no check ran. An unknown
-  `shopify_timezone` is refused before any connection. A dbt run
+  rows per day for the last seven days that are over, in
+  `store.timezone` for Shopify, against the four weeks before, then every
+  finding) and exit with 1 on a `fail` or `error` or when no check ran. An unknown
+  `store.timezone`, and `shopify_timezone` among the package's vars, are
+  refused before any connection. A dbt run
   with failing tests or models no longer stops the command: its results
   are in the report.
 - `dactopus run --full-refresh [PACKAGE ...]` rebuilds the canonical
@@ -61,9 +63,23 @@ a minor release may change the command line and the configuration file.
   Shopify) read as one model, on the canonical database, over TLS for an
   `https://` URL on any port, as the ClickHouse user of the optional
   `serve` section (`user`, `password_env`) or else the user of
-  `clickhouse.url`. Each command reads only the password it connects
+  `clickhouse.url`, with "today" in `store.timezone` (the executor's
+  `--time-zone`). Each command reads only the password it connects
   with. The password reaches the executor inside the process, never on a
   command line.
+- One time zone per installation, `store.timezone`: the runner passes it
+  to every package that declares a time zone variable and to `serve`.
+  With Shopify configured, `dactopus run` reads the shop's zone
+  (`shop { ianaTimezone }`) before loading and refuses a different
+  `store.timezone`, naming both. Before loading it also counts the rows of
+  the daily tables of each package with a time zone variable whose date
+  is not the day of their time in `store.timezone`, and stops on any with
+  the `dactopus run --full-refresh <package>` that rebuilds them; a
+  package rebuilt with `--full-refresh` is not counted. The built-in check
+  `time_zone` runs the same count after the build: a `fail` for a package
+  with a time zone variable, a `warn` with the share of rows for one
+  without (GA4, whose days are the property's), over the days
+  `rows_per_day` reads.
 - The runner reads what it sets and reads of a package from the
   package's `deployment.yml` in the models library: the Ossie model
   `serve` passes, the dbt variables that take the input database and the

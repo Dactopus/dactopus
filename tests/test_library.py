@@ -174,6 +174,14 @@ def test_input_database_variable_is_reserved(tmp_path):
         _check_vars(tmp_path, "ga4_lookback_days: 3", "ga4_input_database: other")
 
 
-def test_an_unknown_shop_time_zone_is_refused(tmp_path):
-    with pytest.raises(ConfigError, match="shopify_timezone: 'Mars/Olympus' is not a time zone"):
-        _check_vars(tmp_path, "shopify_timezone: UTC", "shopify_timezone: Mars/Olympus")
+def test_time_zone_variable_is_reserved(tmp_path):
+    with pytest.raises(
+        ConfigError,
+        match="packages.shopify.vars: remove shopify_timezone; the runner sets it from "
+        "store.timezone",
+    ):
+        _check_vars(
+            tmp_path,
+            "client_secret_env: SHOPIFY_CLIENT_SECRET\n",
+            "client_secret_env: SHOPIFY_CLIENT_SECRET\n    vars: {shopify_timezone: UTC}\n",
+        )
