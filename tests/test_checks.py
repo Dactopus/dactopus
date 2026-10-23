@@ -136,8 +136,9 @@ def test_a_model_whose_columns_changed_names_the_full_refresh(tmp_path):
     [error] = [f for f in findings if f.severity == "error"]
     assert error.object == "orders"
     assert error.sentence == (
-        "orders changed its columns in this release of the models library; "
-        "run `dactopus run --full-refresh shopify` once to rebuild it."
+        "orders no longer has the columns its model builds (a release of the models "
+        "library changed them, or the table was changed by hand); run `dactopus run` "
+        "once with `--full-refresh shopify` to rebuild it from the input."
     )
     assert _count(findings)["skip"] == 27
     assert checks.failed(findings)
