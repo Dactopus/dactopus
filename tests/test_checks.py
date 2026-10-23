@@ -20,7 +20,10 @@ from dactopus import checks, config
 #   model node name and resource_type; of a unit test name and model.
 # The cases: a clean build (one package warning), dbt test with duplicated
 # rows, a build stopped by that failure, a build with a dropped input table,
-# and freshness within, past and without its source table.
+# and freshness within, past and without its source table. The build stopped
+# by a model whose columns changed (`on_schema_change: fail`) was recorded
+# on 2026-10-23 with dbt-clickhouse 1.10.3 over v0.5.3, by dropping a column
+# of the built `orders`; its nodes are those of the manifest.
 FIXTURES = Path(__file__).parent / "fixtures" / "dbt" / "shopify"
 
 # The day after the latest day of _daily(date(2026, 10, 20), ...), at noon.
@@ -124,6 +127,20 @@ def test_a_model_error_names_the_table_and_dbt_message(tmp_path):
     [error] = [f for f in findings if f.severity == "error"]
     assert error.object == "orders"
     assert error.sentence.startswith("orders could not be built: Database Error in model orders")
+
+
+def test_a_model_whose_columns_changed_names_the_full_refresh(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_schema_change.json")
+    findings = checks.dbt_results(None, cfg)
+    [error] = [f for f in findings if f.severity == "error"]
+    assert error.object == "orders"
+    assert error.sentence == (
+        "orders changed its columns in this release of the models library; "
+        "run `dactopus run --full-refresh shopify` once to rebuild it."
+    )
+    assert _count(findings)["skip"] == 27
+    assert checks.failed(findings)
 
 
 def test_results_that_ran_nothing_are_left_out(tmp_path):

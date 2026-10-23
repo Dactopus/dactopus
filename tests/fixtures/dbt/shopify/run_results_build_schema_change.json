@@ -1,0 +1,210 @@
+{
+ "metadata": {
+  "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v6.json",
+  "dbt_version": "1.11.16",
+  "generated_at": "2026-10-23T00:26:03.572567Z",
+  "invocation_id": "4d1ea5e0-de89-4fa8-8649-f95b635d7d62",
+  "invocation_started_at": "2026-10-23T00:26:01.912585Z",
+  "env": {}
+ },
+ "results": [
+  {
+   "unique_id": "unit_test.dactopus_shopify.order_lines.order_line_discounts_without_tax",
+   "status": "pass",
+   "message": null,
+   "failures": 0
+  },
+  {
+   "unique_id": "model.dactopus_shopify.order_lines",
+   "status": "success",
+   "message": "OK",
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_order_lines_line_id.33f5387ccc",
+   "status": "pass",
+   "message": null,
+   "failures": 0
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_order_lines_order_id.cb6307b41d",
+   "status": "pass",
+   "message": null,
+   "failures": 0
+  },
+  {
+   "unique_id": "test.dactopus_shopify.unique_order_lines_line_id.3c9cba7a68",
+   "status": "pass",
+   "message": null,
+   "failures": 0
+  },
+  {
+   "unique_id": "model.dactopus_shopify.orders",
+   "status": "error",
+   "message": "Runtime Error in model orders (models/orders.sql)\n  \n  The source and target schemas on this incremental model are out of sync.\n  They can be reconciled in several ways:\n    - set the `on_schema_change` config to `append_new_columns` or `sync_all_columns`.\n    - Re-run the incremental model with `full_refresh: True` to update the target schema.\n    - update the schema manually and re-run the process.\n  \n  Additional troubleshooting context:\n     Source columns not in target: []\n     Target columns not in source: [\"loaded_at DateTime64(6, 'UTC')\"]\n     New column types: []\n  ",
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.accepted_values_orders_financial_status__unpaid__paid__partially_refunded__refunded__voided.e3632067f0",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.accepted_values_orders_fulfillment_status__unfulfilled__partially_fulfilled__fulfilled.2d27fd8eb1",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_orders_currency.587e469c1d",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_orders_financial_status.71125cbc9d",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_orders_fulfillment_status.bed1123f5b",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_orders_order_date.6910a855fe",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_orders_order_id.cf6c17daed",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.orders_amounts_consistent",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.relationships_order_lines_order_id__order_id__ref_orders_.69cc0335cb",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.unique_orders_order_id.fed79b3a6e",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "unit_test.dactopus_shopify.refunds.refund_lines_of_one_line_item",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "model.dactopus_shopify.refunds",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_refunds_order_id.3653d9c855",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_refunds_refund_date.609e0f8bee",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_refunds_refund_id.940c260f56",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.relationships_refunds_order_id__order_id__ref_orders_.b4447c4023",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.unique_refunds_refund_id.75ab505588",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "model.dactopus_shopify.sales_events",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.accepted_values_sales_events_event_type__order__refund__cancellation.79250a8834",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_sales_events_amount.182d2faa92",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_sales_events_event_date.42932eea37",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_sales_events_event_id.7cccf8434e",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_sales_events_event_type.5abb7cef1e",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.not_null_sales_events_order_id.6bbfaa9ef3",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.relationships_sales_events_order_id__order_id__ref_orders_.68a541a62b",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.sales_events_make_net_total",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  },
+  {
+   "unique_id": "test.dactopus_shopify.unique_sales_events_event_id.9ef869cdf0",
+   "status": "skipped",
+   "message": null,
+   "failures": null
+  }
+ ]
+}

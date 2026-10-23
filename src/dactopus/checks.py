@@ -102,6 +102,11 @@ _REF = re.compile(r"""ref\(\s*['"]([^'"]+)['"]\s*\)""")
 # so there is nothing to report (the source of dbt 1.11.16, 2026-10-22).
 _NOT_RUN = "no-op"
 
+# What dbt says of an incremental model with `on_schema_change: fail` whose
+# columns differ from the table's (dbt-core 1.11.16 with dbt-clickhouse
+# 1.10.3, 2026-10-23: `status: error`, and the nodes after it skipped).
+_SCHEMA_CHANGE = "The source and target schemas on this incremental model are out of sync"
+
 
 def dbt_results(client: Client, config: Config) -> list[Finding]:
     """The models, tests and unit tests of the last dbt run of each package."""
@@ -125,11 +130,11 @@ def dbt_results(client: Client, config: Config) -> list[Finding]:
             continue
         for result in results["results"]:
             if result["status"] != _NOT_RUN:
-                findings.append(_dbt_finding(result, manifest))
+                findings.append(_dbt_finding(result, manifest, package))
     return findings
 
 
-def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any]) -> Finding:
+def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], package: str) -> Finding:
     unique_id = result["unique_id"]
     kind = unique_id.split(".", 1)[0]
     status = result["status"]
@@ -139,10 +144,16 @@ def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any]) -> Finding:
     observed = status if failures is None else f"{failures} rows"
     if kind == "model":
         table = manifest["nodes"][unique_id]["name"]
-        sentence = {
-            "pass": f"{table} was built.",
-            "skip": f"{table} was not built because an earlier step failed.",
-        }.get(severity, f"{table} could not be built: {message}")
+        if severity == "error" and _SCHEMA_CHANGE in message:
+            sentence = (
+                f"{table} changed its columns in this release of the models library; "
+                f"run `dactopus run --full-refresh {package}` once to rebuild it."
+            )
+        else:
+            sentence = {
+                "pass": f"{table} was built.",
+                "skip": f"{table} was not built because an earlier step failed.",
+            }.get(severity, f"{table} could not be built: {message}")
         return Finding("dbt", table, severity, status, "built", sentence)
     if kind == "unit_test":
         unit = manifest["unit_tests"][unique_id]

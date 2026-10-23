@@ -55,3 +55,18 @@ def test_runner_sets_the_input_database(tmp_path):
     argv, _ = build.command(cfg, _library(tmp_path), "shopify")
     variables = json.loads(argv[argv.index("--vars") + 1])
     assert variables == {"shopify_timezone": "UTC", "shopify_input_database": "raw"}
+
+
+def test_a_full_refresh_follows_build_on_the_command_line(tmp_path):
+    cfg = _config(tmp_path)
+    argv, _ = build.command(cfg, _library(tmp_path), "shopify", "build", "--full-refresh")
+    assert argv[1:3] == ["build", "--full-refresh"]
+
+
+def test_build_passes_the_full_refresh_to_dbt_only_when_asked(tmp_path, monkeypatch):
+    runs = []
+    monkeypatch.setattr(build, "_run", lambda cfg, lib, pkg, *args, writes: runs.append(args))
+    cfg, lib = _config(tmp_path), _library(tmp_path)
+    build.build(cfg, lib, "shopify")
+    build.build(cfg, lib, "shopify", full_refresh=True)
+    assert runs == [("build",), ("build", "--full-refresh")]

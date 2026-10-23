@@ -58,6 +58,18 @@ from the configuration, without the password, which dbt reads from the
 environment. The profile, dbt's output and the report go to `.dactopus/`
 next to the configuration file.
 
+`dactopus run --full-refresh [PACKAGE ...]` loads the sources as usual,
+then builds the named packages (every configured package when none is
+named) with `dbt build --full-refresh`: the canonical tables are rebuilt
+from the input the runner already holds, which keeps every version of
+every row. The input is not reloaded and not changed. Run it once when a
+release of the models library changes a model's columns (the next
+incremental build stops with an error, and the report names the table and
+this command) or when the store's time zone changes. Each table exists
+twice on disk until its rebuild ends: dbt builds the new table next to the
+old one and swaps them when it is complete, so `serve` keeps answering
+from the old table meanwhile.
+
 ## Checks and the report
 
 After the build, `dactopus run` measures the freshness of the input
