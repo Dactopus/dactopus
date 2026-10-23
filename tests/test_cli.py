@@ -29,10 +29,16 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
     assert "dactopus init" in capsys.readouterr().err
 
 
-def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
+def _sample(tmp_path):
+    """The sample configuration (GA4 and Shopify) over a bare library checkout."""
     path = tmp_path / "dactopus.yaml"
     path.write_text(config.SAMPLE.replace("version: v0.5.3", f"path: {tmp_path}"))
     (tmp_path / "sources").mkdir()
+    return path
+
+
+def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
+    path = _sample(tmp_path)
 
     def refuse(client, library, package, database):
         raise DatabaseError("Code: 497. Not enough privileges")
@@ -66,14 +72,6 @@ def test_only_run_takes_the_full_refresh_flag(command):
     assert exit_info.value.code == 2
 
 
-def _sample(tmp_path):
-    """The sample configuration (GA4 and Shopify) over a bare library checkout."""
-    path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.5.3", f"path: {tmp_path}"))
-    (tmp_path / "sources").mkdir()
-    return path
-
-
 def test_full_refresh_names_the_packages_to_rebuild(tmp_path):
     cfg = config.load(_sample(tmp_path))
     assert cli.full_refresh(None, cfg) == set()
@@ -88,8 +86,8 @@ def test_full_refresh_of_an_unknown_package_is_refused_before_anything_runs(
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
     assert main(["run", "--config", str(path), "--full-refresh", "woocommerce"]) == 1
     assert (
-        "dactopus run: --full-refresh: unknown package woocommerce; configured: ga4, shopify."
-        in capsys.readouterr().err
+        "dactopus run: --full-refresh: woocommerce not in the configuration; "
+        "configured: ga4, shopify." in capsys.readouterr().err
     )
 
 

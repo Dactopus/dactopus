@@ -62,7 +62,8 @@ next to the configuration file.
 then builds the named packages (every configured package when none is
 named) with `dbt build --full-refresh`: the canonical tables are rebuilt
 from the input the runner already holds, which keeps every version of
-every row. The input is not reloaded and not changed. Run it once when a
+every row. The input is not reloaded from the start: the usual
+incremental load adds only what is new. Run it once when a
 release of the models library changes a model's columns (the next
 incremental build stops with an error, and the report names the table and
 this command) or when the store's time zone changes. Each table exists
