@@ -146,8 +146,10 @@ def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], package: str)
         table = manifest["nodes"][unique_id]["name"]
         if severity == "error" and _SCHEMA_CHANGE in message:
             sentence = (
-                f"{table} changed its columns in this release of the models library; "
-                f"run `dactopus run --full-refresh {package}` once to rebuild it."
+                f"{table} no longer has the columns its model builds (a release of the "
+                "models library changed them, or the table was changed by hand); run "
+                f"`dactopus run` once with `--full-refresh {package}` to rebuild it "
+                "from the input."
             )
         else:
             sentence = {
