@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from dactopus import config
+from dactopus import config, library
 from dactopus.config import ConfigError
+
+FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 
 def _write(tmp_path: Path, data: dict) -> Path:
@@ -20,7 +22,7 @@ def _base() -> dict:
             "input_database": "raw",
             "database": "canonical",
         },
-        "models": {"version": "v0.5.3"},
+        "models": {"version": "v0.6.0"},
         "packages": {
             "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
             "shopify": {"shop": "dactopus-dev", "vars": {"shopify_timezone": "America/New_York"}},
@@ -33,7 +35,7 @@ def test_sample_loads(tmp_path):
     config.write_sample(path)
     loaded = config.load(path, environ={})
     assert loaded.clickhouse.database == "dactopus"
-    assert loaded.models.version == "v0.5.3"
+    assert loaded.models.version == "v0.6.0"
     assert list(loaded.packages()) == ["ga4", "shopify"]
     assert loaded.workdir == tmp_path.resolve() / ".dactopus"
 
@@ -109,11 +111,23 @@ def test_input_and_canonical_databases_differ(tmp_path):
         config.load(_write(tmp_path, data), environ={})
 
 
+def _check_vars(cfg: config.Config) -> None:
+    """check_vars over the declarations of the fixture library."""
+    models = config.Models(version=None, path=FIXTURE_LIBRARY)
+    deployments = {p: library.deployment(models, FIXTURE_LIBRARY, p) for p in cfg.packages()}
+    config.check_vars(cfg, deployments)
+
+
+def test_declared_vars_pass(tmp_path):
+    _check_vars(config.load(_write(tmp_path, _base()), environ={}))
+
+
 def test_input_database_variable_is_reserved(tmp_path):
     data = _base()
     data["packages"]["ga4"]["vars"] = {"ga4_input_database": "other"}
+    cfg = config.load(_write(tmp_path, data), environ={})
     with pytest.raises(ConfigError, match="remove ga4_input_database"):
-        config.load(_write(tmp_path, data), environ={})
+        _check_vars(cfg)
 
 
 def test_unknown_key_is_refused(tmp_path):
@@ -147,8 +161,9 @@ def test_an_unknown_shop_time_zone_is_refused(tmp_path):
     path.write_text(
         config.SAMPLE.replace("shopify_timezone: UTC", "shopify_timezone: Mars/Olympus")
     )
+    cfg = config.load(path, environ={})
     with pytest.raises(ConfigError, match="shopify_timezone: 'Mars/Olympus' is not a time zone"):
-        config.load(path, environ={})
+        _check_vars(cfg)
 
 
 def _with_serve(data: dict) -> dict:

@@ -36,15 +36,16 @@ a minor release may change the command line and the configuration file.
   through the entry point group `dactopus.checks`. Built in: the models,
   tests and unit tests of the last dbt run, the freshness of the input
   against the package's thresholds (`dbt source freshness`), and a day
-  without rows in the last seven days that are over of `events` or
-  `orders`, unless the same weekday had none in the four weeks before.
+  without rows in the last seven days that are over of a table the
+  package marks as a gap (`events`, `orders`), unless the same weekday
+  had none in the four weeks before.
   `dactopus run` ends with the report, `dactopus check` runs `dbt test`
   and the checks without loading or building; both write it to the
   terminal and to `.dactopus/report.md` (freshness, what did not pass,
   rows per day for the last seven days that are over, in the shop's time
   zone for Shopify, against the four weeks before, then every finding) and
   exit with 1 on a `fail` or `error` or when no check ran. An unknown
-  `shopify_timezone` is refused when the configuration is read. A dbt run
+  `shopify_timezone` is refused before any connection. A dbt run
   with failing tests or models no longer stops the command: its results
   are in the report.
 - `dactopus run --full-refresh [PACKAGE ...]` rebuilds the canonical
@@ -62,6 +63,14 @@ a minor release may change the command line and the configuration file.
   `serve` section (`user`, `password_env`) or else the user of
   `clickhouse.url`. Each command reads only the password it connects
   with. The password reaches the executor inside the process, never on a
-  command line. The sample configuration names
-  the models library v0.5.3, the first release whose GA4 and commerce
-  models can be served together.
+  command line.
+- The runner reads what it sets and reads of a package from the
+  package's `deployment.yml` in the models library: the Ossie model
+  `serve` passes, the dbt variables that take the input database and the
+  time zone, and the tables `rows_per_day` counts, with the ones where a
+  day without rows is a finding. A renamed variable, model file or
+  counted table needs no release of the runner. The models library must be
+  v0.6.0 or later, the first release with the file; the sample
+  configuration names v0.6.0, and an older `models.version` is refused
+  with the version to set. The vars of a package are checked against
+  the file before any connection.

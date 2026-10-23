@@ -1,0 +1,18 @@
+# What a deployment of this package sets and reads. A tool that deploys
+# the package reads this file; it does not read the package's SQL.
+# Format and checks: tests/check_deployment.py.
+model: entities/commerce.yaml
+# A role, and the dbt variable (dbt_project.yml) that plays it.
+vars:
+  input_database: shopify_input_database
+  time_zone: shopify_timezone
+# The built tables a deployment counts rows per day in, by `date`, a Date
+# column. `time` is the column whose day `date` is, in the zone of
+# shopify_timezone. orders and refunds are incremental: a run after the
+# zone changed rebuilds only the orders and refunds that changed, and the
+# others keep the days of the old zone; a row where `date` is not the day
+# of `time` in the zone shows it, and a --full-refresh puts it right.
+# `gap: true`: a day without rows is a finding there.
+daily:
+  - {table: orders, date: order_date, time: order_time, gap: true}
+  - {table: refunds, date: refund_date, time: refund_time}

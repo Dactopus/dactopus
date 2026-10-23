@@ -6,7 +6,7 @@ import pytest
 import yaml
 from clickhouse_connect.driver.exceptions import DatabaseError
 
-from dactopus import checks, config
+from dactopus import checks, config, library
 
 # Output of dbt 1.11.16 with dbt-clickhouse 1.10 over the shopify package of
 # dactopus-data-models v0.4.1 and the library's tests/shopify/fixture.sql,
@@ -25,6 +25,10 @@ from dactopus import checks, config
 # on 2026-10-23 with dbt-clickhouse 1.10.3 over v0.5.3, by dropping a column
 # of the built `orders`; its nodes are those of the manifest.
 FIXTURES = Path(__file__).parent / "fixtures" / "dbt" / "shopify"
+
+# The deployment.yml of the GA4 and Shopify packages of dactopus-data-models
+# v0.6.0, and one without vars.input_database.
+FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 # The day after the latest day of _daily(date(2026, 10, 20), ...), at noon.
 NOW = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
@@ -49,7 +53,7 @@ def _config(tmp_path, *packages):
                     "input_database": "raw",
                     "database": "canonical",
                 },
-                "models": {"version": "v0.5.3"},
+                "models": {"path": str(FIXTURE_LIBRARY)},
                 "packages": {p: known[p] for p in packages or ("shopify",)},
             }
         )
@@ -348,6 +352,9 @@ def test_the_time_zone_defaults_to_the_package(tmp_path):
     (root / "sources" / "shopify" / "dbt_project.yml").write_text(
         "vars:\n  shopify_timezone: Asia/Tokyo\n"
     )
+    (root / "sources" / "shopify" / "deployment.yml").write_text(
+        (FIXTURE_LIBRARY / "sources" / "shopify" / "deployment.yml").read_text()
+    )
     path = tmp_path / "dactopus.yaml"
     path.write_text(
         yaml.safe_dump(
@@ -429,9 +436,18 @@ def test_no_findings_fail_the_run():
     assert checks.failed([])
 
 
+def _declare(monkeypatch, *daily, time_zone=None):
+    """Every package declares these daily tables, and the time zone variable given."""
+    variables = {"input_database": "x_input_database"}
+    if time_zone:
+        variables["time_zone"] = time_zone
+    declared = library.Deployment("entities/x.yaml", variables, tuple(daily))
+    monkeypatch.setattr(checks, "_deployment", lambda config, package: declared)
+
+
 def test_a_missing_table_is_an_error_not_a_crash(tmp_path, monkeypatch):
     cfg = _config(tmp_path)
-    monkeypatch.setitem(checks.DAILY, "shopify", (("missing", "order_date"),))
+    _declare(monkeypatch, library.Daily("missing", "order_date", gap=True))
     [finding] = checks.rows_per_day(_Client({}), cfg)
     assert finding.severity == "error"
     assert (
@@ -439,6 +455,39 @@ def test_a_missing_table_is_an_error_not_a_crash(tmp_path, monkeypatch):
     )
     [volume] = checks.volumes(_Client({}), cfg, NOW)
     assert volume.error.startswith("Code: 60")
+
+
+def test_every_table_marked_gap_is_checked_and_only_those(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, "ga4")
+    _declare(
+        monkeypatch,
+        library.Daily("first", "d", gap=True),
+        library.Daily("second", "d"),
+        library.Daily("third", "d", gap=True),
+    )
+    findings = checks.rows_per_day(_Client(_daily(date(2026, 10, 20), 60)), cfg)
+    assert [(f.object, f.severity) for f in findings] == [("first", "pass"), ("third", "pass")]
+    volumes = checks.volumes(_Client(_daily(date(2026, 10, 20), 60)), cfg, NOW)
+    assert [v.table for v in volumes] == ["first", "second", "third"]
+
+
+def test_a_package_without_a_time_zone_counts_to_its_latest_day(tmp_path, monkeypatch):
+    """GA4: every daily table read is a day that is over, even the latest."""
+    cfg = _config(tmp_path, "ga4")
+    _declare(monkeypatch, library.Daily("events", "event_date", gap=True))
+    [events] = checks.volumes(_Client(_daily(date(2026, 10, 21), 60)), cfg, NOW)
+    assert events.latest == date(2026, 10, 21)
+
+
+def test_the_time_zone_comes_from_the_declared_variable(tmp_path, monkeypatch):
+    cfg = _config(tmp_path)
+    cfg.packages()["shopify"].vars["store_zone"] = "Asia/Tokyo"
+    _declare(monkeypatch, library.Daily("orders", "order_date", gap=True), time_zone="store_zone")
+    # 20:00 UTC on 21 October is already 22 October in Tokyo, and still
+    # 21 October in UTC, the zone of shopify_timezone.
+    at = datetime(2026, 10, 21, 20, 0, tzinfo=UTC)
+    [orders] = checks.volumes(_Client(_daily(date(2026, 10, 21), 60)), cfg, at)
+    assert orders.latest == date(2026, 10, 21)
 
 
 class _EntryPoint:

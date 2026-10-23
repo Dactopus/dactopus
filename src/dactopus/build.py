@@ -11,7 +11,8 @@ from pathlib import Path
 
 import yaml
 
-from .config import INPUT_DATABASE_VARS, Config
+from .config import Config
+from .library import deployment
 
 
 class BuildError(Exception):
@@ -72,7 +73,8 @@ def command(
     profiles = write_profile(config, project)
     output = config.workdir / package
     variables = dict(config.packages()[package].vars)
-    variables[INPUT_DATABASE_VARS[package]] = config.clickhouse.input_database
+    declared = deployment(config.models, library, package).vars
+    variables[declared["input_database"]] = config.clickhouse.input_database
     argv = [
         _dbt(),
         *(dbt_args or ("build",)),

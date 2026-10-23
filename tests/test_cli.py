@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import pytest
 from clickhouse_connect.driver.exceptions import DatabaseError
 
 from dactopus import cli, config
 from dactopus.cli import COMMANDS, main
+
+FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 
 def test_commands_are_the_public_surface():
@@ -29,12 +33,34 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
     assert "dactopus init" in capsys.readouterr().err
 
 
-def _sample(tmp_path):
-    """The sample configuration (GA4 and Shopify) over a bare library checkout."""
+def _sample(tmp_path, library=FIXTURE_LIBRARY):
+    """The sample configuration (GA4 and Shopify) over a library checkout."""
+    assert "version: v0.6.0" in config.SAMPLE
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.5.3", f"path: {tmp_path}"))
-    (tmp_path / "sources").mkdir()
+    path.write_text(config.SAMPLE.replace("version: v0.6.0", f"path: {library}"))
     return path
+
+
+@pytest.mark.parametrize("command", ["run", "check", "serve"])
+def test_vars_are_checked_against_the_library_before_connecting(
+    command, tmp_path, monkeypatch, capsys
+):
+    path = _sample(tmp_path)
+    path.write_text(path.read_text().replace("ga4_lookback_days: 3", "ga4_input_database: x"))
+    monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
+    monkeypatch.setattr(cli.serve, "serve", lambda cfg, root: pytest.fail("served"))
+    assert main([command, "--config", str(path)]) == 1
+    assert "packages.ga4.vars: remove ga4_input_database" in capsys.readouterr().err
+
+
+def test_a_library_without_declarations_names_the_release(tmp_path, capsys):
+    bare = tmp_path / "library"
+    (bare / "sources").mkdir(parents=True)
+    assert main(["check", "--config", str(_sample(tmp_path, bare))]) == 1
+    assert (
+        "dactopus check: ga4: the models library has no sources/ga4/deployment.yml; "
+        "update the checkout at models.path to v0.6.0 or later." in capsys.readouterr().err
+    )
 
 
 def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):

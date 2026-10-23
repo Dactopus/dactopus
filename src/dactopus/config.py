@@ -4,26 +4,24 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
+if TYPE_CHECKING:
+    # library reads Models from here.
+    from .library import Deployment
+
 DEFAULT_PATH = Path("dactopus.yaml")
 
-# The dbt variables that name the input database of each package. The
-# runner sets them from clickhouse.input_database.
-INPUT_DATABASE_VARS = {
-    "ga4": "ga4_input_database",
-    "shopify": "shopify_input_database",
-}
-
-# The dbt variables that name the time zone the days of a package's tables
-# are in; the default is the package's own.
-TIMEZONE_VARS = {"shopify": "shopify_timezone"}
+# The packages the runner loads the sources of. A package of the library
+# without a loader here is not accepted.
+PACKAGES = ("ga4", "shopify")
 
 _VERSION = re.compile(r"v\d+\.\d+\.\d+")
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -113,7 +111,7 @@ def load(path: Path, environ: dict[str, str] | None = None, serving: bool = Fals
         raise ConfigError(f"{path} is not valid YAML: {exc}") from None
     top = _section(raw, "the file", {"clickhouse", "models", "packages", "serve"})
     path = path.resolve()
-    packages = _section(top.get("packages"), "packages", set(INPUT_DATABASE_VARS))
+    packages = _section(top.get("packages"), "packages", set(PACKAGES))
     if not packages:
         raise ConfigError("packages: name at least one package, ga4 or shopify.")
     serve = _serve(top["serve"], environ if serving else None) if "serve" in top else None
@@ -242,22 +240,32 @@ def _vars(section: dict[str, Any], package: str) -> dict[str, Any]:
     value = section.get("vars", {})
     if not isinstance(value, dict):
         raise ConfigError(f"packages.{package}.vars: expected a mapping of dbt variables.")
-    reserved = INPUT_DATABASE_VARS[package]
-    if reserved in value:
-        raise ConfigError(
-            f"packages.{package}.vars: remove {reserved}; the runner sets it "
-            "from clickhouse.input_database."
-        )
-    zone = TIMEZONE_VARS.get(package)
-    if zone in value:
-        try:
-            ZoneInfo(str(value[zone]))
-        except (ZoneInfoNotFoundError, ValueError):
-            raise ConfigError(
-                f"packages.{package}.vars.{zone}: {value[zone]!r} is not a time zone; "
-                "give one like America/New_York."
-            ) from None
     return dict(value)
+
+
+def check_vars(config: Config, deployments: Mapping[str, Deployment]) -> None:
+    """Check packages.<package>.vars against the variables each package declares.
+
+    The declarations come from the library, which is resolved after the
+    file is read.
+    """
+    for package, settings in config.packages().items():
+        declared = deployments[package].vars
+        reserved = declared["input_database"]
+        if reserved in settings.vars:
+            raise ConfigError(
+                f"packages.{package}.vars: remove {reserved}; the runner sets it "
+                "from clickhouse.input_database."
+            )
+        zone = declared.get("time_zone")
+        if zone in settings.vars:
+            try:
+                ZoneInfo(str(settings.vars[zone]))
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ConfigError(
+                    f"packages.{package}.vars.{zone}: {settings.vars[zone]!r} is not a time "
+                    "zone; give one like America/New_York."
+                ) from None
 
 
 def _ga4(value: Any, base: Path) -> GA4:
@@ -310,7 +318,7 @@ clickhouse:
 
 models:
   # A release of dactopus-data-models, downloaded once into ~/.cache/dactopus.
-  version: v0.5.3
+  version: v0.6.0
   # Or a checkout of the library, for development:
   # path: ../dactopus-data-models
 

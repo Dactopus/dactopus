@@ -1,0 +1,5 @@
+# No vars.input_database.
+model: entities/commerce.yaml
+vars:
+  time_zone: broken_timezone
+daily: []
