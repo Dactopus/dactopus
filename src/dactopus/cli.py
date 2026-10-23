@@ -50,7 +50,7 @@ def full_refresh(names: list[str] | None, cfg: config.Config) -> set[str]:
     unknown = sorted(set(names) - set(configured))
     if unknown:
         raise config.ConfigError(
-            f"--full-refresh: unknown package {', '.join(unknown)}; "
+            f"--full-refresh: {', '.join(unknown)} not in the configuration; "
             f"configured: {', '.join(configured)}."
         )
     return set(names or configured)
