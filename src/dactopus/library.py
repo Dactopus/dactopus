@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import io
 import os
 import re
@@ -9,14 +10,16 @@ import tarfile
 import tempfile
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
-from .config import Models
+from .config import Config, ConfigError, Models
 
 ARCHIVE_URL = "https://github.com/Dactopus/dactopus-data-models/archive/refs/tags/{version}.tar.gz"
 
@@ -51,7 +54,7 @@ class Deployment:
     # The Ossie model the package's tables serve, from the library root.
     model: str
     # A role (input_database, time_zone) and the dbt variable that plays it.
-    vars: dict[str, str]
+    vars: Mapping[str, str]
     daily: tuple[Daily, ...]
 
 
@@ -103,9 +106,12 @@ def resolve(models: Models, cache: Path | None = None, fetch: Fetch = _download)
     return root
 
 
+@functools.cache
 def deployment(models: Models, root: Path, package: str) -> Deployment:
     """The declarations of a package in the library at root.
 
+    Read once per process, so every step of a command sees the same
+    declarations even when the checkout at models.path changes meanwhile.
     Keys and roles the runner does not read are ignored, so a newer
     library does not stop an older runner.
     """
@@ -150,9 +156,30 @@ def deployment(models: Models, root: Path, package: str) -> Deployment:
         )
     return Deployment(
         model=model,
-        vars={role: str(name) for role, name in variables.items()},
+        vars=MappingProxyType({role: str(name) for role, name in variables.items()}),
         daily=tuple(tables),
     )
+
+
+def check_vars(config: Config, root: Path) -> None:
+    """Check packages.<package>.vars against the variables each package declares."""
+    for package, settings in config.packages().items():
+        declared = deployment(config.models, root, package).vars
+        reserved = declared["input_database"]
+        if reserved in settings.vars:
+            raise ConfigError(
+                f"packages.{package}.vars: remove {reserved}; the runner sets it "
+                "from clickhouse.input_database."
+            )
+        zone = declared.get("time_zone")
+        if zone in settings.vars:
+            try:
+                ZoneInfo(str(settings.vars[zone]))
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ConfigError(
+                    f"packages.{package}.vars.{zone}: {settings.vars[zone]!r} is not a time "
+                    "zone; give one like America/New_York."
+                ) from None
 
 
 def _mapping(value: Any, where: str) -> dict[str, Any]:
