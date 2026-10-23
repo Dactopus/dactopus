@@ -24,7 +24,7 @@ dependencies = [
     "dbt-clickhouse~=1.10.0",
     "dbt-core~=1.11.0",
     # Not on PyPI yet: its own apache-ossie dependency is a git reference.
-    "dactopus-ossie-clickhouse[mcp] @ git+https://github.com/Dactopus/dactopus-ossie-clickhouse@v0.9.5",
+    "dactopus-ossie-clickhouse[mcp] @ git+https://github.com/Dactopus/dactopus-ossie-clickhouse@v0.10.0",
     "google-auth>=2.30",
     "google-cloud-bigquery-storage[pyarrow]>=2.27",
     "pyyaml>=6",
