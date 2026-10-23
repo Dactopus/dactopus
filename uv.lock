@@ -51,7 +51,7 @@ wheels = [
 [[package]]
 name = "apache-ossie"
 version = "0.2.0.dev0"
-source = { git = "https://github.com/apache/ossie.git?subdirectory=python&rev=7496811#74968116780058f42d678cba3594e35390b5be12" }
+source = { git = "https://github.com/apache/ossie.git?subdirectory=python&rev=7205e15#7205e15253ae3f340f8f191e978685006f5fa72d" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -665,7 +665,7 @@ dev = [
 requires-dist = [
     { name = "certifi", specifier = ">=2024.2" },
     { name = "clickhouse-connect", extras = ["arrow"], specifier = ">=0.8" },
-    { name = "dactopus-ossie-clickhouse", extras = ["mcp"], git = "https://github.com/Dactopus/dactopus-ossie-clickhouse?rev=v0.9.5" },
+    { name = "dactopus-ossie-clickhouse", extras = ["mcp"], git = "https://github.com/Dactopus/dactopus-ossie-clickhouse?rev=v0.10.0" },
     { name = "dbt-clickhouse", specifier = "~=1.10.0" },
     { name = "dbt-core", specifier = "~=1.11.0" },
     { name = "google-auth", specifier = ">=2.30" },
@@ -681,8 +681,8 @@ dev = [
 
 [[package]]
 name = "dactopus-ossie-clickhouse"
-version = "0.9.5"
-source = { git = "https://github.com/Dactopus/dactopus-ossie-clickhouse?rev=v0.9.5#96600cb5013937a5fc698a66c5029d90245ca19d" }
+version = "0.10.0"
+source = { git = "https://github.com/Dactopus/dactopus-ossie-clickhouse?rev=v0.10.0#5dccd19526f924a6ac84a2d1067d3493646d7a19" }
 dependencies = [
     { name = "apache-ossie" },
     { name = "clickhouse-connect" },

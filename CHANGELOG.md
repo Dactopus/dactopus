@@ -54,7 +54,7 @@ a minor release may change the command line and the configuration file.
   models library that changes a model's columns, which the `dbt` check
   reports together with this command, or a change of the store's time
   zone.
-- `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse 0.9.5
+- `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse 0.10.0
   over stdio with the models of the configured packages
   (`entities/web_analytics.yaml` for GA4, `entities/commerce.yaml` for
   Shopify) read as one model, on the canonical database, over TLS for an
