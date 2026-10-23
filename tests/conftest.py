@@ -1,5 +1,6 @@
 import os
 import uuid
+import zoneinfo
 from urllib.parse import urlsplit
 
 import pytest
@@ -35,6 +36,14 @@ def clickhouse(_server, request):
     database = f"dactopus_test_{uuid.uuid4().hex[:8]}"
     yield _server, database
     _server.command(f"DROP DATABASE IF EXISTS `{database}`")
+
+
+@pytest.fixture
+def no_system_zones():
+    """A machine without its own tz database: zone names come from tzdata only."""
+    zoneinfo.reset_tzpath(to=[])
+    yield
+    zoneinfo.reset_tzpath()
 
 
 @pytest.fixture(scope="session")

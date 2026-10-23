@@ -157,6 +157,12 @@ def test_another_name_of_the_shop_time_zone_passes(monkeypatch, shop, store):
     shopify.check_time_zone("dactopus-dev", "token", store)
 
 
+def test_the_shop_time_zone_is_known_without_the_machine_database(monkeypatch, no_system_zones):
+    answer = {"data": {"shop": {"ianaTimezone": "Europe/Kiev"}}}
+    monkeypatch.setattr(shopify, "_post", lambda url, data, headers: answer)
+    shopify.check_time_zone("dactopus-dev", "token", "Europe/Kyiv")
+
+
 def test_another_time_zone_than_the_shop_is_refused(monkeypatch):
     monkeypatch.setattr(shopify, "_post", lambda url, data, headers: SHOP_ZONE)
     with pytest.raises(shopify.LoadError) as refused:

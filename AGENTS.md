@@ -116,6 +116,8 @@ Python 3.11+, managed with uv. The parts that constrain code:
   REST Admin API.
 - No ClickHouse binaries on the runner's machine: `clickhouse local` and
   `clickhouse client` in the library's recipes are replaced by Python.
+- **tzdata** on every platform: the names of time zones do not depend
+  on the age of the machine's tz database.
 
 The models library is not a Python package. The configuration names a
 version (`models.version`: a release tag, fetched as the GitHub archive

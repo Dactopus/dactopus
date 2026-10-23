@@ -17,11 +17,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zoneinfo
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from zoneinfo import TZPATH, available_timezones
+from zoneinfo import available_timezones
 
 import certifi
 from clickhouse_connect.driver.client import Client
@@ -176,24 +177,30 @@ def check_time_zone(shop: str, token: str, zone: str) -> None:
 def _same_zone(zone: str, found: str) -> bool:
     """Whether two names are one zone: the same name, or links to the same
     tz data (UTC and Etc/UTC, Europe/Kiev and Europe/Kyiv), whose days are
-    the same."""
+    the same.
+
+    Both names are read from one tz database: the machine's may predate a
+    name that the tzdata package has, and two releases of a zone's data
+    differ in bytes.
+    """
     if zone == found:
         return True
     if found not in available_timezones():
         return False
-    data = _tzif(zone)
-    return data is not None and data == _tzif(found)
+    roots = [*map(Path, zoneinfo.TZPATH), importlib.resources.files("tzdata.zoneinfo")]
+    for root in roots:
+        data = _tzif(root, zone)
+        if data is not None and data == _tzif(root, found):
+            return True
+    return False
 
 
-def _tzif(zone: str) -> bytes | None:
-    """The tz data of a zone where zoneinfo reads it; a link reads as its target."""
-    for root in TZPATH:
-        path = Path(root, zone)
-        if path.is_file():
-            return path.read_bytes()
+def _tzif(root: Any, zone: str) -> bytes | None:
+    """The tz data of a zone in one database; a link reads as its target."""
+    path = root.joinpath(zone)
     try:
-        return importlib.resources.files("tzdata.zoneinfo").joinpath(zone).read_bytes()
-    except (ModuleNotFoundError, OSError):
+        return path.read_bytes() if path.is_file() else None
+    except OSError:
         return None
 
 
