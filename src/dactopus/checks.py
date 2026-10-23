@@ -651,7 +651,7 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
                         "warn",
                         observed,
                         expected,
-                        f"{off.rows / off.of:.1%} of the rows of {table} ({package}) from "
+                        f"{_share(off.rows, off.of)} of the rows of {table} ({package}) from "
                         f"{off.first} to {off.last} are on another day in {zone}: the source "
                         'counts its days in another time zone, so "today" in an agent\'s '
                         "question and days compared with other packages are off by the "
@@ -659,3 +659,9 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
                     )
                 )
     return findings
+
+
+def _share(rows: int, of: int) -> str:
+    """The share of rows in of, never 0.0% when a row is counted."""
+    share = rows / of
+    return "under 0.1%" if share < 0.001 else f"{share:.1%}"

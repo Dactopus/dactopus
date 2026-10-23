@@ -560,6 +560,19 @@ def test_time_zone_warns_for_a_source_in_another_zone(tmp_path, monkeypatch):
     assert (purchases.severity, purchases.observed) == ("error", "Code: 60. Unknown table")
 
 
+def test_a_few_rows_on_another_day_are_not_zero_percent(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, "ga4", zone="UTC")
+    first, last = date(2020, 12, 28), date(2021, 1, 31)
+    _misdated(
+        monkeypatch,
+        events=Misdated(3, 4_295_584, first, last),
+        sessions=Misdated(0, 10, first, last),
+        purchases=Misdated(0, 10, first, last),
+    )
+    events, _, _ = checks.time_zone(None, cfg)
+    assert events.sentence.startswith("under 0.1% of the rows of events (ga4)")
+
+
 def test_time_zone_leaves_out_tables_without_a_time_column(tmp_path, monkeypatch):
     cfg = _config(tmp_path)
     _declare(monkeypatch, library.Daily("orders", "order_date", gap=True), time_zone="z")

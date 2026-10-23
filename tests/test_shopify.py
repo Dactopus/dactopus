@@ -150,6 +150,13 @@ def test_the_shop_time_zone_passes(monkeypatch):
     assert sent == [{"query": shopify.ZONE_QUERY, "variables": {}}]
 
 
+@pytest.mark.parametrize(("shop", "store"), [("Etc/UTC", "UTC"), ("Europe/Kiev", "Europe/Kyiv")])
+def test_another_name_of_the_shop_time_zone_passes(monkeypatch, shop, store):
+    answer = {"data": {"shop": {"ianaTimezone": shop}}}
+    monkeypatch.setattr(shopify, "_post", lambda url, data, headers: answer)
+    shopify.check_time_zone("dactopus-dev", "token", store)
+
+
 def test_another_time_zone_than_the_shop_is_refused(monkeypatch):
     monkeypatch.setattr(shopify, "_post", lambda url, data, headers: SHOP_ZONE)
     with pytest.raises(shopify.LoadError) as refused:
