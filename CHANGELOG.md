@@ -80,7 +80,9 @@ a minor release may change the command line and the configuration file.
   `time_zone` runs the same count after the build: a `fail` for a package
   with a time zone variable, a `warn` with the share of rows for one
   without (GA4, whose days are the property's), over the days
-  `rows_per_day` reads.
+  `rows_per_day` reads. Zone names come from the `tzdata` package on
+  every platform as well, so a name newer than the machine's own tz
+  database (`Europe/Kyiv`) is known.
 - The runner reads what it sets and reads of a package from the
   package's `deployment.yml` in the models library: the Ossie model
   `serve` passes, the dbt variables that take the input database and the

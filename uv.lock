@@ -653,6 +653,7 @@ dependencies = [
     { name = "google-auth" },
     { name = "google-cloud-bigquery-storage", extra = ["pyarrow"] },
     { name = "pyyaml" },
+    { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
@@ -671,6 +672,7 @@ requires-dist = [
     { name = "google-auth", specifier = ">=2.30" },
     { name = "google-cloud-bigquery-storage", extras = ["pyarrow"], specifier = ">=2.27" },
     { name = "pyyaml", specifier = ">=6" },
+    { name = "tzdata", specifier = ">=2026.5" },
 ]
 
 [package.metadata.requires-dev]

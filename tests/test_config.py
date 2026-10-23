@@ -70,6 +70,13 @@ def test_store_time_zone_is_checked(tmp_path, store, message):
         config.load(_write(tmp_path, data), environ={})
 
 
+@pytest.mark.parametrize("zone", ["America/New_York", "Europe/Kyiv"])
+def test_store_time_zone_is_known_without_the_machine_database(tmp_path, no_system_zones, zone):
+    data = _base()
+    data["store"] = {"timezone": zone}
+    assert config.load(_write(tmp_path, data), environ={}).store.timezone == zone
+
+
 def test_init_does_not_overwrite(tmp_path):
     path = tmp_path / "dactopus.yaml"
     path.write_text("mine")
