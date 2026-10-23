@@ -118,9 +118,15 @@ def _run(config: Config, library: Path, package: str, *dbt_args: str, writes: st
         )
 
 
-def build(config: Config, library: Path, package: str) -> None:
-    """dbt build: the models, their tests and unit tests."""
-    _run(config, library, package, "build", writes="run_results.json")
+def build(config: Config, library: Path, package: str, full_refresh: bool = False) -> None:
+    """dbt build: the models, their tests and unit tests.
+
+    A full refresh rebuilds the canonical tables from the input tables as
+    they are; dbt-clickhouse builds each new table next to the old one and
+    swaps them when it is complete.
+    """
+    args = ("build", "--full-refresh") if full_refresh else ("build",)
+    _run(config, library, package, *args, writes="run_results.json")
 
 
 def test(config: Config, library: Path, package: str) -> None:

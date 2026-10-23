@@ -31,7 +31,29 @@ def _parser() -> argparse.ArgumentParser:
             default=config.DEFAULT_PATH,
             help=f"the configuration file (default: {config.DEFAULT_PATH})",
         )
+        if name == "run":
+            command.add_argument(
+                "--full-refresh",
+                nargs="*",
+                metavar="PACKAGE",
+                help="rebuild the canonical tables of the named packages (all configured "
+                "packages when none is named) from the input, with dbt build --full-refresh",
+            )
     return parser
+
+
+def full_refresh(names: list[str] | None, cfg: config.Config) -> set[str]:
+    """The packages `--full-refresh` rebuilds: none without the flag, all without names."""
+    if names is None:
+        return set()
+    configured = list(cfg.packages())
+    unknown = sorted(set(names) - set(configured))
+    if unknown:
+        raise config.ConfigError(
+            f"--full-refresh: unknown package {', '.join(unknown)}; "
+            f"configured: {', '.join(configured)}."
+        )
+    return set(names or configured)
 
 
 def _init(args: argparse.Namespace) -> int:
@@ -67,6 +89,7 @@ def _connect(cfg: config.Config) -> clickhouse.Client:
 
 def _run(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
+    refresh = full_refresh(args.full_refresh, cfg)
     root = library.resolve(cfg.models)
     client = _connect(cfg)
     database = cfg.clickhouse.input_database
@@ -82,7 +105,7 @@ def _run(args: argparse.Namespace) -> int:
         with _step(f"shopify: loading orders into {database}", _AGAIN):
             shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
     for package in cfg.packages():
-        build.build(cfg, root, package)
+        build.build(cfg, root, package, full_refresh=package in refresh)
     return _report(cfg, root, client)
 
 

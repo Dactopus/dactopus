@@ -46,6 +46,84 @@ def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     assert "run again" in err
 
 
+@pytest.mark.parametrize(
+    ("argv", "names"),
+    [
+        (["run"], None),
+        (["run", "--full-refresh"], []),
+        (["run", "--full-refresh", "shopify"], ["shopify"]),
+        (["run", "--full-refresh", "ga4", "shopify"], ["ga4", "shopify"]),
+    ],
+)
+def test_run_parses_the_full_refresh_flag(argv, names):
+    assert cli._parser().parse_args(argv).full_refresh == names
+
+
+@pytest.mark.parametrize("command", ["check", "serve"])
+def test_only_run_takes_the_full_refresh_flag(command):
+    with pytest.raises(SystemExit) as exit_info:
+        cli._parser().parse_args([command, "--full-refresh"])
+    assert exit_info.value.code == 2
+
+
+def _sample(tmp_path):
+    """The sample configuration (GA4 and Shopify) over a bare library checkout."""
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(config.SAMPLE.replace("version: v0.5.3", f"path: {tmp_path}"))
+    (tmp_path / "sources").mkdir()
+    return path
+
+
+def test_full_refresh_names_the_packages_to_rebuild(tmp_path):
+    cfg = config.load(_sample(tmp_path))
+    assert cli.full_refresh(None, cfg) == set()
+    assert cli.full_refresh([], cfg) == {"ga4", "shopify"}
+    assert cli.full_refresh(["shopify"], cfg) == {"shopify"}
+
+
+def test_full_refresh_of_an_unknown_package_is_refused_before_anything_runs(
+    tmp_path, monkeypatch, capsys
+):
+    path = _sample(tmp_path)
+    monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
+    assert main(["run", "--config", str(path), "--full-refresh", "woocommerce"]) == 1
+    assert (
+        "dactopus run: --full-refresh: unknown package woocommerce; configured: ga4, shopify."
+        in capsys.readouterr().err
+    )
+
+
+def test_run_rebuilds_the_named_packages_after_the_usual_load(tmp_path, monkeypatch):
+    """The flag reaches dbt for the named packages only; the loads run as always."""
+    path = _sample(tmp_path)
+    steps = []
+    monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
+    monkeypatch.setattr(
+        cli.clickhouse, "create_input", lambda *args: steps.append(("input", args[2]))
+    )
+    monkeypatch.setattr(cli.ga4, "BigQueryExport", lambda settings: object())
+    monkeypatch.setattr(cli.ga4, "lookback_days", lambda settings, root: 3)
+    monkeypatch.setattr(cli.ga4, "load", lambda *args: steps.append(("load", "ga4")))
+    monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
+    monkeypatch.setattr(cli.shopify, "graphql", lambda shop, token: object())
+    monkeypatch.setattr(cli.shopify, "load", lambda *args: steps.append(("load", "shopify")))
+    monkeypatch.setattr(
+        cli.build,
+        "build",
+        lambda cfg, root, package, full_refresh: steps.append(("build", package, full_refresh)),
+    )
+    monkeypatch.setattr(cli, "_report", lambda cfg, root, client: 0)
+    assert main(["run", "--config", str(path), "--full-refresh", "shopify"]) == 0
+    assert steps == [
+        ("input", "ga4"),
+        ("input", "shopify"),
+        ("load", "ga4"),
+        ("load", "shopify"),
+        ("build", "ga4", False),
+        ("build", "shopify", True),
+    ]
+
+
 def _fixture(client, library, package, database):
     """The package's input tables with the library's hand-written rows."""
     from dactopus import clickhouse as ch
@@ -97,3 +175,58 @@ def test_check_builds_the_report_over_the_library_fixtures(
     assert "| Day | events | sessions | purchases |" in text
     assert "| Day | orders | refunds |" in text
     assert "- pass: orders.order_id: No order_id repeats in orders." in text
+
+
+def _rows(client, database, table):
+    return client.query(f"SELECT * FROM `{database}`.`{table}` ORDER BY ALL").result_rows
+
+
+def test_full_refresh_rebuilds_the_named_package_from_the_input(
+    clickhouse, models_library, tmp_path, monkeypatch
+):
+    """`run --full-refresh shopify` over the library fixtures, with the loads stubbed out.
+
+    Shopify is rebuilt with `--full-refresh` and GA4 is not; the rebuilt
+    tables equal, row for row, those of the incremental run before.
+    """
+    import json
+
+    from dactopus import build
+
+    client, database = clickhouse
+    raw = f"{database}_raw"
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(
+        config.SAMPLE.replace("dactopus_raw", raw).replace(
+            "database: dactopus\n", f"database: {database}\n"
+        )
+    )
+    cfg = config.load(path)
+    monkeypatch.setattr(cli.ga4, "BigQueryExport", lambda settings: object())
+    monkeypatch.setattr(cli.ga4, "load", lambda *args: None)
+    monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
+    monkeypatch.setattr(cli.shopify, "graphql", lambda shop, token: object())
+    monkeypatch.setattr(cli.shopify, "load", lambda *args: None)
+    tables = {
+        "ga4": ("events", "sessions", "purchases"),
+        "shopify": ("orders", "order_lines", "refunds", "sales_events"),
+    }
+    try:
+        for package in tables:
+            _fixture(client, models_library, package, raw)
+        for _ in range(2):  # the first build, then an incremental run over the same input
+            for package in tables:
+                build.build(cfg, models_library, package)
+        before = {t: _rows(client, database, t) for ts in tables.values() for t in ts}
+        main(["run", "--config", str(path), "--full-refresh", "shopify"])
+        after = {t: _rows(client, database, t) for ts in tables.values() for t in ts}
+        args = {
+            p: json.loads((build.target(cfg, p) / "run_results.json").read_text())["args"]
+            for p in tables
+        }
+    finally:
+        client.command(f"DROP DATABASE IF EXISTS `{raw}`")
+    assert args["shopify"]["full_refresh"] is True
+    assert "full_refresh" not in args["ga4"]
+    assert all(before[t] for t in before)
+    assert after == before

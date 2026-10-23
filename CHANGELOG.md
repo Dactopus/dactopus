@@ -47,6 +47,13 @@ a minor release may change the command line and the configuration file.
   `shopify_timezone` is refused when the configuration is read. A dbt run
   with failing tests or models no longer stops the command: its results
   are in the report.
+- `dactopus run --full-refresh [PACKAGE ...]` rebuilds the canonical
+  tables of the named packages (every configured package when none is
+  named) from the input the runner holds, with `dbt build --full-refresh`
+  after the usual load; the input is not reloaded. For a release of the
+  models library that changes a model's columns, which the `dbt` check
+  reports together with this command, or a change of the store's time
+  zone.
 - `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse 0.9.5
   over stdio with the models of the configured packages
   (`entities/web_analytics.yaml` for GA4, `entities/commerce.yaml` for
