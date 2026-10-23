@@ -3,10 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from dactopus import config, library
+from dactopus import config
 from dactopus.config import ConfigError
-
-FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 
 def _write(tmp_path: Path, data: dict) -> Path:
@@ -111,25 +109,6 @@ def test_input_and_canonical_databases_differ(tmp_path):
         config.load(_write(tmp_path, data), environ={})
 
 
-def _check_vars(cfg: config.Config) -> None:
-    """check_vars over the declarations of the fixture library."""
-    models = config.Models(version=None, path=FIXTURE_LIBRARY)
-    deployments = {p: library.deployment(models, FIXTURE_LIBRARY, p) for p in cfg.packages()}
-    config.check_vars(cfg, deployments)
-
-
-def test_declared_vars_pass(tmp_path):
-    _check_vars(config.load(_write(tmp_path, _base()), environ={}))
-
-
-def test_input_database_variable_is_reserved(tmp_path):
-    data = _base()
-    data["packages"]["ga4"]["vars"] = {"ga4_input_database": "other"}
-    cfg = config.load(_write(tmp_path, data), environ={})
-    with pytest.raises(ConfigError, match="remove ga4_input_database"):
-        _check_vars(cfg)
-
-
 def test_unknown_key_is_refused(tmp_path):
     data = _base()
     data["packages"]["woocommerce"] = {}
@@ -154,16 +133,6 @@ def test_models_version_or_path(tmp_path):
 def test_missing_file_points_to_init(tmp_path):
     with pytest.raises(ConfigError, match="dactopus init"):
         config.load(tmp_path / "absent.yaml", environ={})
-
-
-def test_an_unknown_shop_time_zone_is_refused(tmp_path):
-    path = tmp_path / "dactopus.yaml"
-    path.write_text(
-        config.SAMPLE.replace("shopify_timezone: UTC", "shopify_timezone: Mars/Olympus")
-    )
-    cfg = config.load(path, environ={})
-    with pytest.raises(ConfigError, match="shopify_timezone: 'Mars/Olympus' is not a time zone"):
-        _check_vars(cfg)
 
 
 def _with_serve(data: dict) -> dict:

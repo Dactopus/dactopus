@@ -4,18 +4,12 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import unquote, urlsplit
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
-
-if TYPE_CHECKING:
-    # library reads Models from here.
-    from .library import Deployment
 
 DEFAULT_PATH = Path("dactopus.yaml")
 
@@ -241,31 +235,6 @@ def _vars(section: dict[str, Any], package: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ConfigError(f"packages.{package}.vars: expected a mapping of dbt variables.")
     return dict(value)
-
-
-def check_vars(config: Config, deployments: Mapping[str, Deployment]) -> None:
-    """Check packages.<package>.vars against the variables each package declares.
-
-    The declarations come from the library, which is resolved after the
-    file is read.
-    """
-    for package, settings in config.packages().items():
-        declared = deployments[package].vars
-        reserved = declared["input_database"]
-        if reserved in settings.vars:
-            raise ConfigError(
-                f"packages.{package}.vars: remove {reserved}; the runner sets it "
-                "from clickhouse.input_database."
-            )
-        zone = declared.get("time_zone")
-        if zone in settings.vars:
-            try:
-                ZoneInfo(str(settings.vars[zone]))
-            except (ZoneInfoNotFoundError, ValueError):
-                raise ConfigError(
-                    f"packages.{package}.vars.{zone}: {settings.vars[zone]!r} is not a time "
-                    "zone; give one like America/New_York."
-                ) from None
 
 
 def _ga4(value: Any, base: Path) -> GA4:

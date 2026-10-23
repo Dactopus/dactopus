@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from dactopus import library
-from dactopus.config import Models
+from dactopus import config, library
+from dactopus.config import ConfigError, Models
 from dactopus.library import LibraryError
 
 
@@ -117,6 +117,13 @@ def test_a_missing_key_names_the_package_and_the_file():
     )
 
 
+def test_a_package_is_read_once(tmp_path):
+    """Every step of a command sees the declarations the first read found."""
+    first = _declare(tmp_path, "model: m.yaml\nvars: {input_database: p_db}\ndaily: []\n")
+    (tmp_path / "sources" / "p" / "deployment.yml").write_text("model: [\n")
+    assert library.deployment(Models(None, tmp_path), tmp_path, "p") is first
+
+
 def _declare(tmp_path, text):
     (tmp_path / "sources" / "p").mkdir(parents=True)
     (tmp_path / "sources" / "p" / "deployment.yml").write_text(text)
@@ -149,3 +156,24 @@ def test_unknown_keys_and_roles_are_ignored(tmp_path):
 def test_a_wrong_declaration_is_refused(tmp_path, text, message):
     with pytest.raises(LibraryError, match=message):
         _declare(tmp_path, text)
+
+
+def _check_vars(tmp_path, old, new):
+    """check_vars over the sample configuration, edited, and the fixture library."""
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(config.SAMPLE.replace(old, new))
+    library.check_vars(config.load(path, environ={}), FIXTURE_LIBRARY)
+
+
+def test_declared_vars_pass(tmp_path):
+    _check_vars(tmp_path, "", "")
+
+
+def test_input_database_variable_is_reserved(tmp_path):
+    with pytest.raises(ConfigError, match="packages.ga4.vars: remove ga4_input_database"):
+        _check_vars(tmp_path, "ga4_lookback_days: 3", "ga4_input_database: other")
+
+
+def test_an_unknown_shop_time_zone_is_refused(tmp_path):
+    with pytest.raises(ConfigError, match="shopify_timezone: 'Mars/Olympus' is not a time zone"):
+        _check_vars(tmp_path, "shopify_timezone: UTC", "shopify_timezone: Mars/Olympus")

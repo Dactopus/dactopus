@@ -90,8 +90,7 @@ def _connect(cfg: config.Config) -> clickhouse.Client:
 def _library(cfg: config.Config) -> Path:
     """The library root, with the configured vars checked against its packages."""
     root = library.resolve(cfg.models)
-    deployments = {p: library.deployment(cfg.models, root, p) for p in cfg.packages()}
-    config.check_vars(cfg, deployments)
+    library.check_vars(cfg, root)
     return root
 
 
