@@ -55,6 +55,8 @@ def test_sample_sets_the_store_time_zone_and_no_package_one(tmp_path):
         ({}, "store.timezone: missing"),
         ({"timezone": "Mars/Olympus"}, "store.timezone: 'Mars/Olympus' is not a time zone"),
         ({"timezone": "../etc/passwd"}, "is not a time zone"),
+        # A file on a case-insensitive disk, not a name Shopify answers.
+        ({"timezone": "america/new_york"}, "'america/new_york' is not a time zone"),
         ({"timezone": "UTC", "zone": "UTC"}, "store: unknown key zone"),
     ],
 )

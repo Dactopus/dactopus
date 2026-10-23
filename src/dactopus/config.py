@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import available_timezones
 
 import yaml
 
@@ -227,12 +227,12 @@ def _serve(value: Any, environ: dict[str, str] | None) -> Serve:
 def _store(value: Any) -> Store:
     section = _section(value, "store", {"timezone"})
     zone = _text(section, "timezone", "store")
-    try:
-        ZoneInfo(zone)
-    except (ZoneInfoNotFoundError, ValueError):
+    # Not ZoneInfo(zone): on a case-insensitive file system it opens
+    # america/new_york, a name Shopify never answers and Linux refuses.
+    if zone not in available_timezones():
         raise ConfigError(
             f"store.timezone: {zone!r} is not a time zone; give one like America/New_York."
-        ) from None
+        )
     return Store(timezone=zone)
 
 

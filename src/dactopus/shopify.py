@@ -117,8 +117,11 @@ def _unreachable(shop: str, exc: OSError) -> str:
     )
 
 
-def _graphql(shop: str, token: str) -> Post:
-    """The data of a query to the GraphQL Admin API, waiting out throttling."""
+def _graphql(shop: str, token: str, refused: str) -> Post:
+    """The data of a query to the GraphQL Admin API, waiting out throttling.
+
+    ``refused`` is the next action when the API answers with an HTTP error.
+    """
     url = f"https://{shop}.myshopify.com/admin/api/{API_VERSION}/graphql.json"
     headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
 
@@ -129,8 +132,7 @@ def _graphql(shop: str, token: str) -> Post:
                 body = _post(url, payload, headers)
             except urllib.error.HTTPError as exc:
                 raise LoadError(
-                    f"shopify: the Admin API of {shop}.myshopify.com answered {exc.code}; "
-                    "check that the app has read_orders. Run again to resume."
+                    f"shopify: the Admin API of {shop}.myshopify.com answered {exc.code}; {refused}"
                 ) from None
             except OSError as exc:
                 raise LoadError(_unreachable(shop, exc)) from None
@@ -147,13 +149,18 @@ def _graphql(shop: str, token: str) -> Post:
 
 def graphql(shop: str, token: str) -> Fetch:
     """A page of orders from the GraphQL Admin API."""
-    post = _graphql(shop, token)
+    post = _graphql(shop, token, "check that the app has read_orders. Run again to resume.")
     return lambda variables: post(QUERY, variables)["orders"]
 
 
 def check_time_zone(shop: str, token: str, zone: str) -> None:
     """Refuse a store.timezone other than the shop's: the orders' days would be off."""
-    found = _graphql(shop, token)(ZONE_QUERY, {})["shop"]["ianaTimezone"]
+    post = _graphql(
+        shop,
+        token,
+        "check that the app is installed on the store and run again; nothing has been loaded yet.",
+    )
+    found = post(ZONE_QUERY, {})["shop"]["ianaTimezone"]
     if found != zone:
         raise LoadError(
             f"shopify: the time zone of {shop}.myshopify.com is {found}, and store.timezone "

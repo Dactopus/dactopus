@@ -81,6 +81,24 @@ def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     assert "run again" in err
 
 
+def test_a_refused_count_of_the_days_says_nothing_was_loaded(tmp_path, monkeypatch, capsys):
+    path = _sample(tmp_path)
+
+    def refuse(*args):
+        raise DatabaseError("Code: 497. Not enough privileges")
+
+    monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
+    monkeypatch.setattr(cli.shopify, "check_time_zone", lambda shop, token, zone: None)
+    monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
+    monkeypatch.setattr(cli.build, "check_zone", refuse)
+    assert main(["run", "--config", str(path)]) == 1
+    err = capsys.readouterr().err
+    assert "build: counting the days of the tables in dactopus: ClickHouse refused it" in err
+    assert (
+        "check that the ClickHouse user can read dactopus and run again; nothing has been " in err
+    )
+
+
 @pytest.mark.parametrize(
     ("argv", "names"),
     [
