@@ -159,3 +159,16 @@ def test_another_time_zone_than_the_shop_is_refused(monkeypatch):
         "store.timezone is Europe/Berlin; set store.timezone to America/New_York, the shop's "
         "(Settings > General in the Shopify admin)."
     )
+
+
+def test_a_refused_time_zone_query_says_nothing_was_loaded(monkeypatch):
+    def refuse(url, data, headers):
+        raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(shopify, "_post", refuse)
+    with pytest.raises(shopify.LoadError) as refused:
+        shopify.check_time_zone("dactopus-dev", "token", "America/New_York")
+    assert str(refused.value) == (
+        "shopify: the Admin API of dactopus-dev.myshopify.com answered 403; check that the app "
+        "is installed on the store and run again; nothing has been loaded yet."
+    )

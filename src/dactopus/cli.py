@@ -104,7 +104,12 @@ def _run(args: argparse.Namespace) -> int:
         token = shopify.access_token(cfg.shopify)
         shopify.check_time_zone(cfg.shopify.shop, token, cfg.store.timezone)
     client = _connect(cfg)
-    with _step(f"build: counting the days of the tables in {cfg.clickhouse.database}", _AGAIN):
+    canonical = cfg.clickhouse.database
+    with _step(
+        f"build: counting the days of the tables in {canonical}",
+        f"check that the ClickHouse user can read {canonical} and run again; nothing has "
+        "been loaded yet.",
+    ):
         build.check_zone(client, cfg, root, refresh)
     database = cfg.clickhouse.input_database
     for package in cfg.packages():
