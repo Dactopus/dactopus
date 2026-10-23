@@ -544,7 +544,7 @@ def test_time_zone_warns_for_a_source_in_another_zone(tmp_path, monkeypatch):
         monkeypatch,
         events=Misdated(892_970, 4_295_584, first, last),
         sessions=Misdated(0, 10, first, last),
-        purchases=DatabaseError("Code: 60. Unknown table"),
+        purchases=DatabaseError("Code: 497. Not enough privileges"),
     )
     events, sessions, purchases = checks.time_zone(None, cfg)
     assert asked["events"] == ("America/New_York", 35)
@@ -557,7 +557,8 @@ def test_time_zone_warns_for_a_source_in_another_zone(tmp_path, monkeypatch):
         "America/New_York: the source counts its days in another time zone"
     )
     assert sessions.severity == "pass"
-    assert (purchases.severity, purchases.observed) == ("error", "Code: 60. Unknown table")
+    assert (purchases.severity, purchases.observed) == ("error", "Code: 497. Not enough privileges")
+    assert purchases.sentence.endswith("check that the ClickHouse user can read it and run again.")
 
 
 def test_a_few_rows_on_another_day_are_not_zero_percent(tmp_path, monkeypatch):
@@ -571,6 +572,20 @@ def test_a_few_rows_on_another_day_are_not_zero_percent(tmp_path, monkeypatch):
     )
     events, _, _ = checks.time_zone(None, cfg)
     assert events.sentence.startswith("under 0.1% of the rows of events (ga4)")
+
+
+def test_almost_every_row_on_another_day_is_not_a_hundred_percent(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, "ga4", zone="UTC")
+    first, last = date(2020, 12, 28), date(2021, 1, 31)
+    _misdated(
+        monkeypatch,
+        events=Misdated(4_295_581, 4_295_584, first, last),
+        sessions=Misdated(10, 10, first, last),
+        purchases=Misdated(0, 10, first, last),
+    )
+    events, sessions, _ = checks.time_zone(None, cfg)
+    assert events.sentence.startswith("over 99.9% of the rows of events (ga4)")
+    assert sessions.sentence.startswith("100.0% of the rows of sessions (ga4)")
 
 
 def test_time_zone_leaves_out_tables_without_a_time_column(tmp_path, monkeypatch):
