@@ -18,6 +18,7 @@ def _config(tmp_path):
                     "input_database": "raw",
                     "database": "canonical",
                 },
+                "store": {"timezone": "UTC"},
                 "models": {"version": "v0.6.0"},
                 "packages": {"shopify": {"shop": "s"}},
             }

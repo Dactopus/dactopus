@@ -18,12 +18,11 @@ from importlib.metadata import entry_points
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-import yaml
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
 from . import library
-from .build import target
+from .build import misdated, target
 from .config import Config
 
 Severity = Literal["pass", "skip", "warn", "fail", "error"]
@@ -400,7 +399,7 @@ def volumes(client: Client, config: Config, at: datetime) -> list[Volume]:
     database = config.clickhouse.database
     for package in config.packages():
         declared = _deployment(config, package)
-        last = _last_day(config, package, declared, at)
+        last = _last_day(config, declared, at)
         for counted in declared.daily:
             table = counted.table
             try:
@@ -414,23 +413,17 @@ def _deployment(config: Config, package: str) -> library.Deployment:
     return library.deployment(config.models, library.resolve(config.models), package)
 
 
-def _last_day(
-    config: Config, package: str, declared: library.Deployment, at: datetime
-) -> date | None:
-    """Yesterday in the package's time zone; None for a package whose days are all over.
+def _last_day(config: Config, declared: library.Deployment, at: datetime) -> date | None:
+    """Yesterday in store.timezone; None for a package whose days are all over.
 
     A package without a time zone variable has days that end where its
     source says (GA4 is read in daily tables, each a day that is over). A
-    Shopify day is over at midnight in the shop's time zone.
+    package with one is built in store.timezone, and its day is over at
+    midnight there.
     """
-    var = declared.vars.get("time_zone")
-    if var is None:
+    if "time_zone" not in declared.vars:
         return None
-    zone = config.packages()[package].vars.get(var)
-    if zone is None:
-        project = library.resolve(config.models) / "sources" / package / "dbt_project.yml"
-        zone = yaml.safe_load(project.read_text())["vars"][var]
-    return at.astimezone(ZoneInfo(str(zone))).date() - timedelta(days=1)
+    return at.astimezone(ZoneInfo(config.store.timezone)).date() - timedelta(days=1)
 
 
 def _first_line(exc: Exception) -> str:
@@ -475,7 +468,7 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
     at = now()
     for package in config.packages():
         declared = _deployment(config, package)
-        last = _last_day(config, package, declared, at)
+        last = _last_day(config, declared, at)
         for counted in declared.daily:
             if not counted.gap:
                 continue
@@ -573,3 +566,96 @@ def _days(days: list[date]) -> str:
     if len(days) == 1:
         return days[0].isoformat()
     return ", ".join(day.isoformat() for day in days[:-1]) + f" and {days[-1].isoformat()}"
+
+
+# Time zone: the daily tables with a time column, counted for rows whose
+# date is not the day of their time in store.timezone. A package with a
+# time zone variable is built in that zone, so such a row means tables
+# built in another one. A package without one has the days of its source
+# (GA4: the property's zone), counted over the days rows_per_day reads.
+
+
+def time_zone(client: Client, config: Config) -> list[Finding]:
+    """Whether the days of each daily table are those of store.timezone."""
+    findings: list[Finding] = []
+    zone = config.store.timezone
+    expected = f"every row on its day in {zone}"
+    for package in config.packages():
+        declared = _deployment(config, package)
+        built_in_zone = "time_zone" in declared.vars
+        for counted in declared.daily:
+            if counted.time is None:
+                continue
+            table = counted.table
+            days = None if built_in_zone else WEEK * (PAST_WEEKS + 1)
+            try:
+                off = misdated(client, config.clickhouse.database, counted, zone, days)
+            except ClickHouseError as exc:
+                findings.append(
+                    Finding(
+                        "time zone",
+                        table,
+                        "error",
+                        _first_line(exc),
+                        expected,
+                        f"The days of {table} ({package}) could not be counted; build it "
+                        "with `dactopus run`.",
+                    )
+                )
+                continue
+            if not off.of:
+                findings.append(
+                    Finding(
+                        "time zone",
+                        table,
+                        "skip",
+                        "no rows",
+                        expected,
+                        f"{table} ({package}) has no rows to check the days of.",
+                    )
+                )
+                continue
+            observed = f"{off.rows:,} of {off.of:,} rows on another day"
+            if days is not None:
+                observed += f", from {off.first} to {off.last}"
+            if not off.rows:
+                findings.append(
+                    Finding(
+                        "time zone",
+                        table,
+                        "pass",
+                        observed,
+                        expected,
+                        f"Every row of {table} ({package}) is on its day in {zone}.",
+                    )
+                )
+            elif built_in_zone:
+                findings.append(
+                    Finding(
+                        "time zone",
+                        table,
+                        "fail",
+                        observed,
+                        expected,
+                        f"{_n(off.rows, 'row')} of {table} ({package}) "
+                        f"{_verb(off.rows, 'is', 'are')} on another day than in {zone}: the "
+                        "table was built in another time zone. Run `dactopus run "
+                        f"--full-refresh {package}` once to rebuild it.",
+                    )
+                )
+            else:
+                findings.append(
+                    Finding(
+                        "time zone",
+                        table,
+                        "warn",
+                        observed,
+                        expected,
+                        f"{off.rows / off.of:.1%} of the rows of {table} ({package}) from "
+                        f"{off.first} to {off.last} are on another day in {zone}: the source "
+                        'counts its days in another time zone, so "today" in an agent\'s '
+                        "question and days compared with other packages are off by the "
+                        "difference between the zones.",
+                    )
+                )
+    return findings

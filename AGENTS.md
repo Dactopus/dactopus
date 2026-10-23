@@ -30,7 +30,7 @@ In scope:
 
 - One configuration file per installation: the ClickHouse connection and
   the user `serve` connects as, the databases for raw input and canonical
-  tables, the version of the models
+  tables, the store's time zone, the version of the models
   library, the packages to run and their parameters.
 - Loading GA4: the BigQuery export, read with the Storage Read API, into
   the GA4 package's input table.
@@ -152,7 +152,8 @@ do not depend on each other; no root dbt project is generated.
   observed, expected, and a sentence for the owner. Checks register
   through Python entry points; built-in ones are dbt test results (from
   `target/run_results.json` with `manifest.json` for the test's kind,
-  column and parameters), input freshness, and rows per day. The report
+  column and parameters), input freshness, rows per day, and the time
+  zone of the daily tables against `store.timezone`. The report
   is Markdown, to the terminal and to a file, three answers first (how
   fresh the data is; whether every check passed and which did not, in
   words; volumes per day this week against past weeks), details below.

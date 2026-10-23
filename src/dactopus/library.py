@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -165,21 +164,15 @@ def check_vars(config: Config, root: Path) -> None:
     """Check packages.<package>.vars against the variables each package declares."""
     for package, settings in config.packages().items():
         declared = deployment(config.models, root, package).vars
-        reserved = declared["input_database"]
-        if reserved in settings.vars:
-            raise ConfigError(
-                f"packages.{package}.vars: remove {reserved}; the runner sets it "
-                "from clickhouse.input_database."
-            )
-        zone = declared.get("time_zone")
-        if zone in settings.vars:
-            try:
-                ZoneInfo(str(settings.vars[zone]))
-            except (ZoneInfoNotFoundError, ValueError):
+        for role, source in (
+            ("input_database", "clickhouse.input_database"),
+            ("time_zone", "store.timezone"),
+        ):
+            reserved = declared.get(role)
+            if reserved is not None and reserved in settings.vars:
                 raise ConfigError(
-                    f"packages.{package}.vars.{zone}: {settings.vars[zone]!r} is not a time "
-                    "zone; give one like America/New_York."
-                ) from None
+                    f"packages.{package}.vars: remove {reserved}; the runner sets it from {source}."
+                )
 
 
 def _mapping(value: Any, where: str) -> dict[str, Any]:

@@ -58,7 +58,11 @@ QUERY = f"""query ($cursor: String, $filter: String) {{
   }}
 }}"""
 
+# The shop's time zone, Settings > General in the admin; any app can read it.
+ZONE_QUERY = "{ shop { ianaTimezone } }"
+
 Fetch = Callable[[dict[str, Any]], dict[str, Any]]
+Post = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 
 class LoadError(Exception):
@@ -113,13 +117,13 @@ def _unreachable(shop: str, exc: OSError) -> str:
     )
 
 
-def graphql(shop: str, token: str) -> Fetch:
-    """A page of orders from the GraphQL Admin API, waiting out throttling."""
+def _graphql(shop: str, token: str) -> Post:
+    """The data of a query to the GraphQL Admin API, waiting out throttling."""
     url = f"https://{shop}.myshopify.com/admin/api/{API_VERSION}/graphql.json"
     headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
 
-    def fetch(variables: dict[str, Any]) -> dict[str, Any]:
-        payload = json.dumps({"query": QUERY, "variables": variables}).encode()
+    def post(query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        payload = json.dumps({"query": query, "variables": variables}).encode()
         while True:
             try:
                 body = _post(url, payload, headers)
@@ -136,9 +140,26 @@ def graphql(shop: str, token: str) -> Fetch:
                 continue
             if errors:
                 raise LoadError(f"shopify: the Admin API returned errors: {errors}")
-            return body["data"]["orders"]
+            return body["data"]
 
-    return fetch
+    return post
+
+
+def graphql(shop: str, token: str) -> Fetch:
+    """A page of orders from the GraphQL Admin API."""
+    post = _graphql(shop, token)
+    return lambda variables: post(QUERY, variables)["orders"]
+
+
+def check_time_zone(shop: str, token: str, zone: str) -> None:
+    """Refuse a store.timezone other than the shop's: the orders' days would be off."""
+    found = _graphql(shop, token)(ZONE_QUERY, {})["shop"]["ianaTimezone"]
+    if found != zone:
+        raise LoadError(
+            f"shopify: the time zone of {shop}.myshopify.com is {found}, and store.timezone "
+            f"is {zone}; set store.timezone to {found}, the shop's (Settings > General in "
+            "the Shopify admin)."
+        )
 
 
 def _money(v):

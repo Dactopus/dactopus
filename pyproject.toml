@@ -43,6 +43,7 @@ dactopus = "dactopus.cli:main"
 dbt = "dactopus.checks:dbt_results"
 freshness = "dactopus.checks:freshness"
 rows_per_day = "dactopus.checks:rows_per_day"
+time_zone = "dactopus.checks:time_zone"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]

@@ -28,6 +28,7 @@ def _config(
         clickhouse["password_env"] = "CLICKHOUSE_PASSWORD"
     data = {
         "clickhouse": clickhouse,
+        "store": {"timezone": "America/New_York"},
         "models": {"version": "v0.6.0"},
         "packages": {name: all_packages[name] for name in packages},
     }
@@ -139,6 +140,8 @@ def test_serve_hands_the_files_and_url_to_the_executor(tmp_path, monkeypatch):
             str(root / "entities/commerce.yaml"),
             "--url",
             "http://default@127.0.0.1:8123/canonical",
+            "--time-zone",
+            "America/New_York",
         ]
     ]
 

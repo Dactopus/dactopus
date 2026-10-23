@@ -7,12 +7,15 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import yaml
+from clickhouse_connect.driver.client import Client
 
 from .config import Config
-from .library import deployment
+from .library import Daily, deployment
 
 
 class BuildError(Exception):
@@ -75,6 +78,8 @@ def command(
     variables = dict(config.packages()[package].vars)
     declared = deployment(config.models, library, package).vars
     variables[declared["input_database"]] = config.clickhouse.input_database
+    if "time_zone" in declared:
+        variables[declared["time_zone"]] = config.store.timezone
     argv = [
         _dbt(),
         *(dbt_args or ("build",)),
@@ -139,3 +144,78 @@ def test(config: Config, library: Path, package: str) -> None:
 def freshness(config: Config, library: Path, package: str) -> None:
     """dbt source freshness: the age of the input against the package's thresholds."""
     _run(config, library, package, "source", "freshness", writes="sources.json")
+
+
+@dataclass(frozen=True)
+class Misdated:
+    """Rows of a daily table whose date is not the day of their time in a zone."""
+
+    rows: int
+    # Of all the rows counted, from first to last by date; 0 and None for a
+    # missing or empty table.
+    of: int
+    first: date | None = None
+    last: date | None = None
+
+
+def misdated(
+    client: Client, database: str, counted: Daily, zone: str, days: int | None = None
+) -> Misdated:
+    """Count the rows of a daily table that fall on another day in zone.
+
+    A table built in the zone has none. ``days`` limits the count to the
+    days up to its latest date, for a table too large to read whole. A
+    table or database that does not exist yet counts as empty.
+    """
+    exists = client.query(
+        "SELECT count() FROM system.tables WHERE database = {db:String} AND name = {t:String}",
+        parameters={"db": database, "t": counted.table},
+    ).result_rows[0][0]
+    if not exists:
+        return Misdated(0, 0)
+    qualified = f"`{database}`.`{counted.table}`"
+    day, time = f"`{counted.date}`", f"`{counted.time}`"
+    where = ""
+    if days is not None:
+        where = f" WHERE {day} > (SELECT max({day}) FROM {qualified}) - INTERVAL {days} DAY"
+    rows, of, first, last = client.query(
+        f"SELECT countIf({day} != toDate({time}, {{zone:String}})), count(), "
+        f"min({day}), max({day}) FROM {qualified}{where}",
+        parameters={"zone": zone},
+    ).result_rows[0]
+    if not of:
+        return Misdated(0, 0)
+    return Misdated(int(rows), int(of), first, last)
+
+
+def check_zone(client: Client, config: Config, library: Path, refresh: set[str]) -> None:
+    """Refuse to build over tables built in a zone other than store.timezone.
+
+    The incremental models of a package with a time zone variable rebuild
+    only the rows that changed, so a build after the zone changed would
+    leave the tables with days of both zones. A package rebuilt with
+    --full-refresh is not counted.
+    """
+    zone = config.store.timezone
+    found: dict[str, list[str]] = {}
+    for package in config.packages():
+        declared = deployment(config.models, library, package)
+        if "time_zone" not in declared.vars or package in refresh:
+            continue
+        for counted in declared.daily:
+            if counted.time is None:
+                continue
+            off = misdated(client, config.clickhouse.database, counted, zone)
+            if off.rows:
+                found.setdefault(package, []).append(
+                    f"{off.rows:,} of {off.of:,} rows of {counted.table} ({package})"
+                )
+    if found:
+        packages = " ".join(found)
+        tables = ", ".join(t for ts in found.values() for t in ts)
+        raise BuildError(
+            f"build: the tables of {', '.join(found)} were built in a time zone other than "
+            f"store.timezone ({zone}): {tables} fall on another day in it. Run "
+            f"`dactopus run --full-refresh {packages}` once to rebuild them; until then "
+            "the agent keeps answering from the current tables."
+        )

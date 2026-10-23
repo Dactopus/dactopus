@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -47,6 +48,12 @@ class Serve:
 
 
 @dataclass(frozen=True)
+class Store:
+    # The IANA time zone the installation's days are in: the builds' and serve's.
+    timezone: str
+
+
+@dataclass(frozen=True)
 class Models:
     version: str | None
     path: Path | None
@@ -72,6 +79,7 @@ class Shopify:
 class Config:
     path: Path
     clickhouse: ClickHouse
+    store: Store
     models: Models
     ga4: GA4 | None
     shopify: Shopify | None
@@ -103,7 +111,7 @@ def load(path: Path, environ: dict[str, str] | None = None, serving: bool = Fals
         ) from None
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path} is not valid YAML: {exc}") from None
-    top = _section(raw, "the file", {"clickhouse", "models", "packages", "serve"})
+    top = _section(raw, "the file", {"clickhouse", "store", "models", "packages", "serve"})
     path = path.resolve()
     packages = _section(top.get("packages"), "packages", set(PACKAGES))
     if not packages:
@@ -114,6 +122,7 @@ def load(path: Path, environ: dict[str, str] | None = None, serving: bool = Fals
         clickhouse=_clickhouse(
             top.get("clickhouse"), None if serving and serve is not None else environ
         ),
+        store=_store(top.get("store")),
         models=_models(top.get("models"), path.parent),
         ga4=_ga4(packages["ga4"], path.parent) if "ga4" in packages else None,
         shopify=_shopify(packages["shopify"]) if "shopify" in packages else None,
@@ -215,6 +224,18 @@ def _serve(value: Any, environ: dict[str, str] | None) -> Serve:
     )
 
 
+def _store(value: Any) -> Store:
+    section = _section(value, "store", {"timezone"})
+    zone = _text(section, "timezone", "store")
+    try:
+        ZoneInfo(zone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ConfigError(
+            f"store.timezone: {zone!r} is not a time zone; give one like America/New_York."
+        ) from None
+    return Store(timezone=zone)
+
+
 def _models(value: Any, base: Path) -> Models:
     section = _section(value, "models", {"version", "path"})
     if ("version" in section) == ("path" in section):
@@ -285,6 +306,12 @@ clickhouse:
   input_database: dactopus_raw
   database: dactopus
 
+store:
+  # The store's time zone, Settings > General in the Shopify admin: the days
+  # of the canonical tables, and "today" in an AI agent's questions, are its
+  # days. After changing it, run `dactopus run --full-refresh` once.
+  timezone: UTC
+
 models:
   # A release of dactopus-data-models, downloaded once into ~/.cache/dactopus.
   version: v0.6.0
@@ -317,9 +344,6 @@ packages:
     # The environment variables with the app's client id and secret.
     client_id_env: SHOPIFY_CLIENT_ID
     client_secret_env: SHOPIFY_CLIENT_SECRET
-    vars:
-      # The shop's time zone, Settings > General in the Shopify admin.
-      shopify_timezone: UTC
 """
 
 

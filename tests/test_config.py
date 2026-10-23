@@ -20,10 +20,11 @@ def _base() -> dict:
             "input_database": "raw",
             "database": "canonical",
         },
+        "store": {"timezone": "America/New_York"},
         "models": {"version": "v0.6.0"},
         "packages": {
             "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
-            "shopify": {"shop": "dactopus-dev", "vars": {"shopify_timezone": "America/New_York"}},
+            "shopify": {"shop": "dactopus-dev"},
         },
     }
 
@@ -36,6 +37,35 @@ def test_sample_loads(tmp_path):
     assert loaded.models.version == "v0.6.0"
     assert list(loaded.packages()) == ["ga4", "shopify"]
     assert loaded.workdir == tmp_path.resolve() / ".dactopus"
+
+
+def test_sample_sets_the_store_time_zone_and_no_package_one(tmp_path):
+    path = tmp_path / "dactopus.yaml"
+    config.write_sample(path)
+    loaded = config.load(path, environ={})
+    assert loaded.store.timezone == "UTC"
+    assert loaded.shopify.vars == {}
+    assert "dactopus run --full-refresh" in config.SAMPLE
+
+
+@pytest.mark.parametrize(
+    ("store", "message"),
+    [
+        (None, "store: missing"),
+        ({}, "store.timezone: missing"),
+        ({"timezone": "Mars/Olympus"}, "store.timezone: 'Mars/Olympus' is not a time zone"),
+        ({"timezone": "../etc/passwd"}, "is not a time zone"),
+        ({"timezone": "UTC", "zone": "UTC"}, "store: unknown key zone"),
+    ],
+)
+def test_store_time_zone_is_checked(tmp_path, store, message):
+    data = _base()
+    if store is None:
+        del data["store"]
+    else:
+        data["store"] = store
+    with pytest.raises(ConfigError, match=message):
+        config.load(_write(tmp_path, data), environ={})
 
 
 def test_init_does_not_overwrite(tmp_path):
