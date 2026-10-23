@@ -6,12 +6,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .config import Config
-
-# The Ossie model of the domain each package's canonical tables belong to.
-MODEL_FILES = {
-    "ga4": "entities/web_analytics.yaml",
-    "shopify": "entities/commerce.yaml",
-}
+from .library import deployment
 
 
 class ServeError(Exception):
@@ -19,16 +14,18 @@ class ServeError(Exception):
 
 
 def model_files(cfg: Config, library: Path) -> list[Path]:
-    """The model files of the domains the configured packages cover."""
-    files = []
+    """The model files the configured packages declare, each once."""
+    files: list[Path] = []
     for package in cfg.packages():
-        path = library / MODEL_FILES[package]
+        model = deployment(cfg.models, library, package).model
+        path = library / model
         if not path.is_file():
             raise ServeError(
-                f"{package}: the models library has no {MODEL_FILES[package]}; "
+                f"{package}: the models library has no {model}; "
                 "check models.version or models.path."
             )
-        files.append(path)
+        if path not in files:
+            files.append(path)
     return files
 
 

@@ -8,7 +8,7 @@ from dactopus import library
 from dactopus.config import Models
 
 # The release the loaders are tested against; its input.sql is the contract.
-MODELS = Models(version="v0.5.3", path=None)
+MODELS = Models(version="v0.6.0", path=None)
 
 
 @pytest.fixture(scope="session")

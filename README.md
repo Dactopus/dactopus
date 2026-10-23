@@ -93,7 +93,7 @@ The built-in checks:
 | --- | --- | --- |
 | `dbt` | `run_results.json` and `manifest.json` of the last dbt run | Each model, test and unit test of the package, as a sentence with the count of failing rows |
 | `freshness` | `sources.json` of `dbt source freshness` | The age of the latest input row against the package's `warn_after` and `error_after` |
-| `rows_per_day` | The canonical tables | A day without rows in the last seven days that are over of `events` (GA4) or `orders` (Shopify), unless the same weekday had none in the four weeks before |
+| `rows_per_day` | The canonical tables | A day without rows in the last seven days that are over of a table the package marks as a gap in its `deployment.yml` (`events` for GA4, `orders` for Shopify), unless the same weekday had none in the four weeks before |
 
 A check is a function of a ClickHouse client and the configuration that
 returns findings; a finding names the check, the object, a severity
@@ -111,8 +111,9 @@ reconciliation = "my_checks:reconcile_with_shopify"
 ## Serving the models
 
 `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse over
-stdio, for an AI agent to start as a subprocess. It serves the models of
-the domains the configured packages cover, read as one model:
+stdio, for an AI agent to start as a subprocess. It serves the model
+file each configured package names in its `deployment.yml` in the
+library, read as one model:
 
 | Package | Model file of the library |
 | --- | --- |

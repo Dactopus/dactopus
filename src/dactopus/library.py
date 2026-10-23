@@ -4,22 +4,55 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import tarfile
 import tempfile
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from .config import Models
 
 ARCHIVE_URL = "https://github.com/Dactopus/dactopus-data-models/archive/refs/tags/{version}.tar.gz"
 
+# The first release whose packages ship a deployment.yml.
+DEPLOYMENT_SINCE = "v0.6.0"
+
 Fetch = Callable[[str], bytes]
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 class LibraryError(Exception):
-    """The models library cannot be found or downloaded."""
+    """The models library cannot be found or downloaded, or lacks what the runner reads."""
+
+
+@dataclass(frozen=True)
+class Daily:
+    """A built table counted per day, by its Date column."""
+
+    table: str
+    date: str
+    # The column whose day `date` is; None when the package names none.
+    time: str | None = None
+    # Whether a day without rows is a finding (orders), or ordinary (refunds).
+    gap: bool = False
+
+
+@dataclass(frozen=True)
+class Deployment:
+    """What the runner sets and reads of a package: sources/<package>/deployment.yml."""
+
+    # The Ossie model the package's tables serve, from the library root.
+    model: str
+    # A role (input_database, time_zone) and the dbt variable that plays it.
+    vars: dict[str, str]
+    daily: tuple[Daily, ...]
 
 
 def cache_dir(environ: dict[str, str] | None = None) -> Path:
@@ -68,6 +101,72 @@ def resolve(models: Models, cache: Path | None = None, fetch: Fetch = _download)
             if not (root / "sources").is_dir():
                 raise
     return root
+
+
+def deployment(models: Models, root: Path, package: str) -> Deployment:
+    """The declarations of a package in the library at root.
+
+    Keys and roles the runner does not read are ignored, so a newer
+    library does not stop an older runner.
+    """
+    relative = f"sources/{package}/deployment.yml"
+    path = root / relative
+    if not path.is_file():
+        if models.path is None:
+            action = f"set models.version to {DEPLOYMENT_SINCE} or later"
+        else:
+            action = f"update the checkout at models.path to {DEPLOYMENT_SINCE} or later"
+        raise LibraryError(f"{package}: the models library has no {relative}; {action}.")
+    where = f"{package}: {relative}"
+    try:
+        raw = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as exc:
+        raise LibraryError(f"{where} is not valid YAML: {exc}; report it.") from None
+    section = _mapping(raw, where)
+    model = section.get("model")
+    if not isinstance(model, str) or not model:
+        raise LibraryError(f"{where}: model: missing; expected a path; report it.")
+    variables = _mapping(section.get("vars"), f"{where}: vars")
+    _name(variables, "input_database", f"{where}: vars")
+    if "time_zone" in variables:
+        _name(variables, "time_zone", f"{where}: vars")
+    daily = section.get("daily")
+    if not isinstance(daily, list):
+        raise LibraryError(f"{where}: daily: missing; expected a list of tables; report it.")
+    tables = []
+    for i, entry in enumerate(daily):
+        at = f"{where}: daily[{i}]"
+        entry = _mapping(entry, at)
+        gap = entry.get("gap", False)
+        if not isinstance(gap, bool):
+            raise LibraryError(f"{at}.gap: expected true or false; report it.")
+        tables.append(
+            Daily(
+                table=_name(entry, "table", at),
+                date=_name(entry, "date", at),
+                time=_name(entry, "time", at) if "time" in entry else None,
+                gap=gap,
+            )
+        )
+    return Deployment(
+        model=model,
+        vars={role: str(name) for role, name in variables.items()},
+        daily=tuple(tables),
+    )
+
+
+def _mapping(value: Any, where: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise LibraryError(f"{where}: missing; expected a mapping; report it.")
+    return value
+
+
+def _name(section: dict[str, Any], key: str, where: str) -> str:
+    """A name the runner puts into SQL or dbt variables: a plain identifier."""
+    value = section.get(key)
+    if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
+        raise LibraryError(f"{where}.{key}: missing; expected a plain name; report it.")
+    return value
 
 
 def _extract(archive: bytes, into: Path) -> Path:

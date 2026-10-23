@@ -28,7 +28,7 @@ def _config(
         clickhouse["password_env"] = "CLICKHOUSE_PASSWORD"
     data = {
         "clickhouse": clickhouse,
-        "models": {"version": "v0.5.3"},
+        "models": {"version": "v0.6.0"},
         "packages": {name: all_packages[name] for name in packages},
     }
     if serve_section is not None:
@@ -38,9 +38,22 @@ def _config(
     return config.load(path, environ=environ or {}, serving=True)
 
 
-def _library(tmp_path: Path, files=None) -> Path:
+FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
+
+MODEL_FILES = ["entities/web_analytics.yaml", "entities/commerce.yaml"]
+
+
+def _library(tmp_path: Path, files=None, ga4_model=None) -> Path:
+    """The declarations of the fixture library, and empty model files."""
     root = tmp_path / "library"
-    for name in serve.MODEL_FILES.values() if files is None else files:
+    for package in ("ga4", "shopify"):
+        declared = FIXTURE_LIBRARY / "sources" / package / "deployment.yml"
+        (root / "sources" / package).mkdir(parents=True)
+        text = declared.read_text()
+        if package == "ga4" and ga4_model is not None:
+            text = text.replace("model: entities/web_analytics.yaml", f"model: {ga4_model}")
+        (root / "sources" / package / "deployment.yml").write_text(text)
+    for name in MODEL_FILES if files is None else files:
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text("")
     return root
@@ -58,6 +71,12 @@ def test_files_are_the_domains_of_the_packages(tmp_path, packages, files):
     cfg = _config(tmp_path, "http://default@127.0.0.1:8123", packages)
     root = _library(tmp_path)
     assert serve.model_files(cfg, root) == [root / name for name in files]
+
+
+def test_a_model_two_packages_declare_is_passed_once(tmp_path):
+    cfg = _config(tmp_path, "http://default@127.0.0.1:8123")
+    root = _library(tmp_path, ["entities/commerce.yaml"], ga4_model="entities/commerce.yaml")
+    assert serve.model_files(cfg, root) == [root / "entities/commerce.yaml"]
 
 
 def test_missing_model_file_names_the_package(tmp_path):
@@ -126,8 +145,9 @@ def test_serve_hands_the_files_and_url_to_the_executor(tmp_path, monkeypatch):
 
 def test_serve_error_goes_to_stderr(tmp_path, monkeypatch, capsys):
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.5.3", f"path: {tmp_path}"))
-    (tmp_path / "sources").mkdir()
+    assert "version: v0.6.0" in config.SAMPLE
+    root = _library(tmp_path, files=[])
+    path.write_text(config.SAMPLE.replace("version: v0.6.0", f"path: {root}"))
     assert main(["serve", "--config", str(path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""

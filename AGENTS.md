@@ -70,6 +70,14 @@ Out of scope, do not build:
   the tables a package reads) and the transformations; the runner owns
   delivery to that contract and running. A gap between the two is fixed
   in the library, never patched around in the runner.
+- The runner knows a package only by its `input.sql` and its
+  `sources/<package>/deployment.yml`: the Ossie model its tables serve,
+  the dbt variables that take the input database and the time zone, and
+  the tables counted per day. A variable, table, column or model file
+  name of a package never appears in the runner's code. Two exceptions:
+  the loaders, which write the tables `input.sql` defines (the GA4
+  loader also rereads as many days as the package's
+  `ga4_lookback_days`), and the commented sample `init` writes.
 - The executor knows nothing of Dactopus; the runner is a consumer like
   any other. What the runner needs from it is proposed there as a
   feature for every Ossie user.
@@ -149,10 +157,9 @@ do not depend on each other; no root dbt project is generated.
   fresh the data is; whether every check passed and which did not, in
   words; volumes per day this week against past weeks), details below.
   The exit code is non-zero on a `fail` or `error` finding.
-- `serve` passes the model files of the domains the configured packages
-  cover (`entities/web_analytics.yaml` for GA4, `entities/commerce.yaml`
-  for Shopify) and the connection; the executor combines them. The
-  runner does not read, merge or edit model files.
+- `serve` passes the model file each configured package declares and
+  the connection; the executor combines them. The runner does not read,
+  merge or edit model files.
 - Memory: a daily GA4 table of a mid-size brand is hundreds of megabytes
   of Arrow. Keep it; read in `ReadRows` batches when a load exceeds it.
 - Errors name the step, the object and the next action in plain words;

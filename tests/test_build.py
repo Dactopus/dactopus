@@ -1,8 +1,11 @@
 import json
+from pathlib import Path
 
 import yaml
 
 from dactopus import build, config
+
+FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 
 def _config(tmp_path):
@@ -16,7 +19,7 @@ def _config(tmp_path):
                     "input_database": "raw",
                     "database": "canonical",
                 },
-                "models": {"version": "v0.5.3"},
+                "models": {"version": "v0.6.0"},
                 "packages": {"shopify": {"shop": "s", "vars": {"shopify_timezone": "UTC"}}},
             }
         )
@@ -28,6 +31,8 @@ def _library(tmp_path):
     project = tmp_path / "lib/sources/shopify"
     project.mkdir(parents=True)
     (project / "dbt_project.yml").write_text("name: dactopus_shopify\nprofile: dactopus\n")
+    declared = FIXTURE_LIBRARY / "sources/shopify/deployment.yml"
+    (project / "deployment.yml").write_text(declared.read_text())
     return tmp_path / "lib"
 
 

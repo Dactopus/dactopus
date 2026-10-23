@@ -1,0 +1,20 @@
+# What a deployment of this package sets and reads. A tool that deploys
+# the package reads this file; it does not read the package's SQL.
+# Format and checks: tests/check_deployment.py.
+model: entities/web_analytics.yaml
+# A role, and the dbt variable (dbt_project.yml) that plays it. No
+# time_zone: the export writes event_date in the property's zone, which
+# it does not record, and the package takes none.
+vars:
+  input_database: ga4_input_database
+# The built tables a deployment counts rows per day in, by `date`, a Date
+# column. `time` is the column whose day `date` is, in the property's
+# zone: a count of rows where `date` is not the day of `time` in a zone
+# says how far the property's days are from it. sessions and purchases
+# take the date and the time of their first event, so the two relate as
+# event_date to event_time. `gap: true`: a day without rows is a finding
+# there.
+daily:
+  - {table: events, date: event_date, time: event_time, gap: true}
+  - {table: sessions, date: session_date, time: session_start_time}
+  - {table: purchases, date: purchase_date, time: purchase_time}

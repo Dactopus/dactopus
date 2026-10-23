@@ -87,10 +87,18 @@ def _connect(cfg: config.Config) -> clickhouse.Client:
         return clickhouse.connect(ch)
 
 
+def _library(cfg: config.Config) -> Path:
+    """The library root, with the configured vars checked against its packages."""
+    root = library.resolve(cfg.models)
+    deployments = {p: library.deployment(cfg.models, root, p) for p in cfg.packages()}
+    config.check_vars(cfg, deployments)
+    return root
+
+
 def _run(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
     refresh = full_refresh(args.full_refresh, cfg)
-    root = library.resolve(cfg.models)
+    root = _library(cfg)
     client = _connect(cfg)
     database = cfg.clickhouse.input_database
     for package in cfg.packages():
@@ -111,7 +119,7 @@ def _run(args: argparse.Namespace) -> int:
 
 def _check(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
-    root = library.resolve(cfg.models)
+    root = _library(cfg)
     client = _connect(cfg)
     for package in cfg.packages():
         build.test(cfg, root, package)
@@ -121,7 +129,7 @@ def _check(args: argparse.Namespace) -> int:
 def _serve(args: argparse.Namespace) -> int:
     """MCP over stdio: stdout is the protocol, so nothing else is printed there."""
     cfg = config.load(args.config, serving=True)
-    return serve.serve(cfg, library.resolve(cfg.models))
+    return serve.serve(cfg, _library(cfg))
 
 
 def _report(cfg: config.Config, root: Path, client: clickhouse.Client) -> int:
