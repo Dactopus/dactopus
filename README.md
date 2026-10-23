@@ -45,7 +45,7 @@ that takes a time zone (`shopify_timezone` for Shopify, which the
 package's `vars` may not set) and to the executor in `serve`, so "today"
 in an agent's question is the store's date. With Shopify configured,
 `dactopus run` first reads the shop's zone and refuses a `store.timezone`
-that differs. It then counts, in the daily tables of each package that
+that differs; another name of the same zone (`UTC` for `Etc/UTC`) passes. It then counts, in the daily tables of each package that
 takes a time zone, the rows whose date is not the day of their time in
 `store.timezone`. Such a row means the tables were built in another zone:
 the Shopify models are incremental, and a build after the zone changed

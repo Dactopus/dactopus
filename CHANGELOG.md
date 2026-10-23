@@ -71,7 +71,8 @@ a minor release may change the command line and the configuration file.
   to every package that declares a time zone variable and to `serve`.
   With Shopify configured, `dactopus run` reads the shop's zone
   (`shop { ianaTimezone }`) before loading and refuses a different
-  `store.timezone`, naming both. Before loading it also counts the rows of
+  `store.timezone`, naming both; another name of the same zone (`UTC`
+  for `Etc/UTC`) passes. Before loading it also counts the rows of
   the daily tables of each package with a time zone variable whose date
   is not the day of their time in `store.timezone`, and stops on any with
   the `dactopus run --full-refresh <package>` that rebuilds them; a

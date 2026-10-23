@@ -8,6 +8,7 @@ loads. Bulk operations cannot read refund lines, so orders come in pages.
 from __future__ import annotations
 
 import functools
+import importlib.resources
 import json
 import os
 import ssl
@@ -18,7 +19,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
+from zoneinfo import TZPATH, available_timezones
 
 import certifi
 from clickhouse_connect.driver.client import Client
@@ -82,7 +85,7 @@ def _post(url: str, data: bytes, headers: dict[str, str]) -> dict[str, Any]:
 
 
 def access_token(package: Shopify, environ: dict[str, str] | None = None) -> str:
-    """A token from the client credentials grant; it lasts 24 hours, longer than a load."""
+    """A token from the client credentials grant; it lasts 24 hours, longer than a run."""
     environ = os.environ if environ is None else environ
     missing = [
         name for name in (package.client_id_env, package.client_secret_env) if not environ.get(name)
@@ -161,12 +164,36 @@ def check_time_zone(shop: str, token: str, zone: str) -> None:
         "check that the app is installed on the store and run again; nothing has been loaded yet.",
     )
     found = post(ZONE_QUERY, {})["shop"]["ianaTimezone"]
-    if found != zone:
+    if not _same_zone(zone, found):
         raise LoadError(
             f"shopify: the time zone of {shop}.myshopify.com is {found}, and store.timezone "
             f"is {zone}; set store.timezone to {found}, the shop's (Settings > General in "
             "the Shopify admin)."
         )
+
+
+def _same_zone(zone: str, found: str) -> bool:
+    """Whether two names are one zone: the same name, or links to the same
+    tz data (UTC and Etc/UTC, Europe/Kiev and Europe/Kyiv), whose days are
+    the same."""
+    if zone == found:
+        return True
+    if found not in available_timezones():
+        return False
+    data = _tzif(zone)
+    return data is not None and data == _tzif(found)
+
+
+def _tzif(zone: str) -> bytes | None:
+    """The tz data of a zone where zoneinfo reads it; a link reads as its target."""
+    for root in TZPATH:
+        path = Path(root, zone)
+        if path.is_file():
+            return path.read_bytes()
+    try:
+        return importlib.resources.files("tzdata.zoneinfo").joinpath(zone).read_bytes()
+    except (ModuleNotFoundError, OSError):
+        return None
 
 
 def _money(v):
