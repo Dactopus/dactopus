@@ -29,7 +29,9 @@ a minor release may change the command line and the configuration file.
   deletions of products from the store's events, from the GraphQL Admin
   API (2026-10), each kind from an hour before its latest loaded change,
   with a token from the app's client credentials (`read_orders` and
-  `read_products`). Each package is built with
+  `read_products`); a models library before v0.7.0, whose Shopify input
+  has no `products`, is refused before anything is loaded, with the
+  version to set. Each package is built with
   `dbt build` and a dbt profile the runner writes, not the one in the
   package; the profile and dbt's output go to `.dactopus/` next to the
   configuration.
