@@ -18,7 +18,16 @@ from dactopus.config import Shopify
 # FULFILLMENT_NOT_REQUIRED (a live load on the same day). The rest equals
 # that live load. Partial and whole refunds, a cancellation, taxes included,
 # a custom item, a gift card, a tip refunded without lines, import duties.
+# The refunds' processedAt, which the query reads since library v0.7.2, was
+# read from the store on 2026-10-27; for these refunds, made in the admin,
+# it equals createdAt.
 PAGES = json.loads((Path(__file__).parent / "fixtures/shopify_orders.json").read_text())
+# A page with #1022, recorded on 2026-10-27 through the connector with
+# shopify.QUERY's fields: an order and a refund created through the API
+# with processedAt in the past (stage 0 of the history stand), so the
+# refund's createdAt is four months after its processedAt.
+IMPORTED = json.loads((Path(__file__).parent / "fixtures/shopify_order_imported.json").read_text())
+NOTHING = [{"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": []}]
 # Pages answering shopify.PRODUCTS_QUERY and shopify.DELETIONS_QUERY: the
 # eighteen products of the development store and the one deletion in its
 # events (a draft created and deleted on 2026-10-26), recorded on 2026-10-27
@@ -139,6 +148,38 @@ def test_a_library_without_products_is_refused_before_loading(shopify_input):
     )
     assert api.calls == []
     assert _table(client, database, "orders") == []
+
+
+def test_refunds_without_processed_at_are_refused_before_loading(shopify_input):
+    """A refunds table from before v0.7.2, or a library older than it."""
+    client, database = shopify_input
+    client.command(f"ALTER TABLE `{database}`.refunds DROP COLUMN processed_at")
+    api = FakeAPI(ALL)
+    with pytest.raises(shopify.LoadError) as refused:
+        shopify.load(client, api, database)
+    assert str(refused.value) == (
+        f"shopify: the input table {database}.refunds has no processed_at column, the date of "
+        "a refund since models library v0.7.2. With an older library, set models.version, or "
+        "the checkout at models.path, to v0.7.2 or later. With v0.7.2 or later, the table is "
+        "older than the library: add the column as the library's changelog for 0.7.2 says "
+        "(https://github.com/Dactopus/dactopus-data-models/blob/main/CHANGELOG.md), then run "
+        "`dactopus run --full-refresh shopify`. Nothing has been loaded yet."
+    )
+    assert api.calls == []
+    assert _table(client, database, "orders") == []
+
+
+def test_a_refund_keeps_the_date_it_was_processed(shopify_input):
+    client, database = shopify_input
+    shopify.load(
+        client, FakeAPI({"orders": IMPORTED, "products": NOTHING, "events": NOTHING}), database
+    )
+    refunds = client.query(
+        f"SELECT id, created_at, processed_at FROM `{database}`.refunds"
+    ).result_rows
+    assert [(r[0], str(r[1]), str(r[2])) for r in refunds] == [
+        (1115185119410, "2026-10-27 04:42:07", "2026-06-09 18:00:00")
+    ]
 
 
 def _recipe_script(library: Path) -> str:

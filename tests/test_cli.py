@@ -35,9 +35,9 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
 
 def _sample(tmp_path, library=FIXTURE_LIBRARY):
     """The sample configuration (GA4 and Shopify) over a library checkout."""
-    assert "version: v0.7.1" in config.SAMPLE
+    assert "version: v0.7.2" in config.SAMPLE
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.7.1", f"path: {library}"))
+    path.write_text(config.SAMPLE.replace("version: v0.7.2", f"path: {library}"))
     return path
 
 

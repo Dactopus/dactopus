@@ -70,6 +70,13 @@ and `read_products`, installed on the store, and its client id and
 secret; without `read_all_orders` Shopify returns the last 60 days of
 orders only.
 
+A load writes into the input tables the models library's `input.sql`
+creates, and `input.sql` creates a table only if it is missing. When a
+release of the library adds a column to a table an earlier one created,
+the load stops before reading anything and names the table, the column
+and the library's changelog, which says how to add it: the Shopify
+refunds' `processed_at` of v0.7.2, the date a refund counts on.
+
 The runner writes the dbt profile the packages name (`profile: dactopus`)
 from the configuration, without the password, which dbt reads from the
 environment. The profile, dbt's output and the report go to `.dactopus/`
