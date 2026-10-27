@@ -19,16 +19,24 @@ from dactopus.config import Shopify
 # that live load. Partial and whole refunds, a cancellation, taxes included,
 # a custom item, a gift card, a tip refunded without lines, import duties.
 PAGES = json.loads((Path(__file__).parent / "fixtures/shopify_orders.json").read_text())
+# Pages answering shopify.PRODUCTS_QUERY and shopify.DELETIONS_QUERY: the
+# eighteen products of the development store and the one deletion in its
+# events (a draft created and deleted on 2026-10-26), recorded on 2026-10-27
+# through the same connector; the recorded page of 18 is split in two.
+CATALOG = json.loads((Path(__file__).parent / "fixtures/shopify_products.json").read_text())
+ALL = {"orders": PAGES, **CATALOG}
 
 
 class FakeAPI:
+    """Pages per connection, served in order; every call is recorded."""
+
     def __init__(self, pages):
-        self.pages = pages
+        self.pages = {field: list(found) for field, found in pages.items()}
         self.calls = []
 
-    def __call__(self, variables):
-        self.calls.append(variables)
-        return self.pages[len(self.calls) - 1]
+    def __call__(self, field, variables):
+        self.calls.append((field, variables))
+        return self.pages[field].pop(0)
 
 
 @pytest.fixture
@@ -53,25 +61,69 @@ def _table(client, database, name):
 
 def test_orders_are_loaded_page_by_page(shopify_input):
     client, database = shopify_input
-    api = FakeAPI(PAGES)
+    api = FakeAPI(ALL)
     counts = shopify.load(client, api, database)
-    assert counts == {"orders": 7, "order_lines": 10, "refunds": 4, "refund_lines": 3}
+    assert counts == {
+        "orders": 7,
+        "order_lines": 10,
+        "refunds": 4,
+        "refund_lines": 3,
+        "products": 18 + 1,
+    }
+    first = "updated_at:>='2000-01-01T00:00:00Z'"
     assert api.calls == [
-        {"cursor": None, "filter": "updated_at:>='2000-01-01T00:00:00Z'"},
-        {"cursor": "page-2", "filter": "updated_at:>='2000-01-01T00:00:00Z'"},
+        ("orders", {"cursor": None, "filter": first}),
+        ("orders", {"cursor": "page-2", "filter": first}),
+        ("products", {"cursor": None, "filter": first}),
+        ("products", {"cursor": "products-2", "filter": first}),
+        (
+            "events",
+            {
+                "cursor": None,
+                "filter": "subject_type:PRODUCT AND action:destroy AND "
+                "created_at:>='2000-01-01T00:00:00Z'",
+            },
+        ),
     ]
     tip = [row for row in _table(client, database, "orders") if row[1] == "#1017"][0]
     assert tip[0] == 18928835854514
+    deleted = [row for row in _table(client, database, "products") if row[0] == 15441296064690]
+    # id, title, product_type, vendor, status, is_gift_card, updated_at, deleted_at
+    assert len(deleted) == 1
+    assert deleted[0][1:6] == ("", "", "", "", False)
+    assert deleted[0][6] == deleted[0][7]
 
 
 def test_next_load_starts_an_hour_before_the_latest_change(shopify_input):
     client, database = shopify_input
-    shopify.load(client, FakeAPI(PAGES), database)
-    api = FakeAPI(PAGES[1:])
+    shopify.load(client, FakeAPI(ALL), database)
+    changed = {
+        "orders": PAGES[1:],
+        "products": [
+            {"pageInfo": {"hasNextPage": False}, "nodes": CATALOG["products"][1]["nodes"][-3:]}
+        ],
+        "events": CATALOG["events"],
+    }
+    api = FakeAPI(changed)
     shopify.load(client, api, database)
-    assert api.calls == [{"cursor": None, "filter": "updated_at:>='2026-10-06T11:18:22Z'"}]
+    # The orders from an hour before the latest order's change; the products
+    # and the deletions from an hour before the latest product's change,
+    # which here is later than the deletion.
+    assert api.calls == [
+        ("orders", {"cursor": None, "filter": "updated_at:>='2026-10-06T11:18:22Z'"}),
+        ("products", {"cursor": None, "filter": "updated_at:>='2026-10-26T11:41:14Z'"}),
+        (
+            "events",
+            {
+                "cursor": None,
+                "filter": "subject_type:PRODUCT AND action:destroy AND "
+                "created_at:>='2026-10-26T11:41:14Z'",
+            },
+        ),
+    ]
     # The versions delivered again are appended; the package keeps the latest.
     assert len(_table(client, database, "orders")) == 7 + 3
+    assert len(_table(client, database, "products")) == 19 + 4
 
 
 def _recipe_script(library: Path) -> str:
@@ -84,15 +136,19 @@ def _recipe_script(library: Path) -> str:
 def test_rows_equal_the_readme_recipe(shopify_input, models_library, tmp_path, monkeypatch):
     """The runner loads what export_shopify.py and its load step load."""
     client, database = shopify_input
-    shopify.load(client, FakeAPI(PAGES), database)
+    shopify.load(client, FakeAPI(ALL), database)
 
-    pages = iter(PAGES)
-    monkeypatch.setattr(
-        "urllib.request.urlopen",
-        lambda request, context=None: io.BytesIO(
-            json.dumps({"data": {"orders": next(pages)}}).encode()
-        ),
+    # The recipe reads the orders, then the products, then the deletions.
+    pages = iter(
+        [(field, page) for field in ("orders", "products", "events") for page in ALL[field]]
     )
+
+    def answer(request, context=None):
+        field, page = next(pages)
+        assert f"{field}(" in json.loads(request.data)["query"]
+        return io.BytesIO(json.dumps({"data": {field: page}}).encode())
+
+    monkeypatch.setattr("urllib.request.urlopen", answer)
     monkeypatch.setenv("SHOPIFY_SHOP", "dactopus-dev")
     monkeypatch.setenv("SHOPIFY_TOKEN", "token")
     monkeypatch.setattr(sys, "argv", ["export_shopify.py", "2000-01-01T00:00:00Z", str(tmp_path)])
@@ -118,6 +174,38 @@ def test_more_lines_than_a_page_holds_is_refused():
         shopify.rows(order)
 
 
+def test_product_rows_follow_the_contract():
+    product = CATALOG["products"][1]["nodes"][1]  # the gift card
+    assert shopify.product_row(product) == {
+        "id": 15408877666482,
+        "title": "Gift Card",
+        "product_type": "giftcard",
+        "vendor": "Snowboard Vendor",
+        "status": "ACTIVE",
+        "is_gift_card": True,
+        "updated_at": "2026-10-06 03:59:37",
+    }
+    assert shopify.deletion_row(CATALOG["events"][0]["nodes"][0]) == {
+        "id": 15441296064690,
+        "updated_at": "2026-10-26 08:57:04",
+        "deleted_at": "2026-10-26 08:57:04",
+    }
+
+
+def test_a_refused_products_query_names_the_scope(monkeypatch):
+    def refuse(url, data, headers):
+        raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(shopify, "_post", refuse)
+    fetch = shopify.graphql("dactopus-dev", "token")
+    with pytest.raises(
+        shopify.LoadError, match="answered 403; check that the app has read_products"
+    ):
+        fetch("products", {"cursor": None, "filter": ""})
+    with pytest.raises(shopify.LoadError, match="check that the app has read_orders"):
+        fetch("orders", {"cursor": None, "filter": ""})
+
+
 def test_missing_app_secret_is_named():
     package = Shopify(shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET", vars={})
     with pytest.raises(shopify.LoadError, match="SECRET is not set"):
@@ -132,7 +220,7 @@ def test_unreachable_store_says_run_again(monkeypatch):
     with pytest.raises(
         shopify.LoadError, match="cannot reach dactopus-dev.myshopify.com.*run again"
     ):
-        shopify.graphql("dactopus-dev", "token")({"cursor": None, "filter": ""})
+        shopify.graphql("dactopus-dev", "token")("orders", {"cursor": None, "filter": ""})
 
 
 # The answer to shopify.ZONE_QUERY on the development store, through the

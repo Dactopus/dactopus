@@ -24,10 +24,12 @@ a minor release may change the command line and the configuration file.
   daily tables of the BigQuery export through the Storage Read API, the
   last `ga4_lookback_days` reread and replaced on every run, as the
   Google account the load names; a gcloud login bills the reads to the
-  configured project. Shopify:
-  orders with lines, shipping and refunds from the GraphQL Admin API
-  (2026-10), from an hour before the latest loaded change, with a token
-  from the app's client credentials. Each package is built with
+  configured project. Shopify: orders with lines, shipping and refunds,
+  then the products, archived ones and drafts included, and the
+  deletions of products from the store's events, from the GraphQL Admin
+  API (2026-10), each kind from an hour before its latest loaded change,
+  with a token from the app's client credentials (`read_orders` and
+  `read_products`). Each package is built with
   `dbt build` and a dbt profile the runner writes, not the one in the
   package; the profile and dbt's output go to `.dactopus/` next to the
   configuration.
@@ -57,7 +59,7 @@ a minor release may change the command line and the configuration file.
   models library that changes a model's columns, which the `dbt` check
   reports together with this command, or a change of the store's time
   zone.
-- `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse 0.10.0
+- `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse 0.12.0
   over stdio with the models of the configured packages
   (`entities/web_analytics.yaml` for GA4, `entities/commerce.yaml` for
   Shopify) read as one model, on the canonical database, over TLS for an
@@ -90,6 +92,6 @@ a minor release may change the command line and the configuration file.
   day without rows is a finding. A renamed variable, model file or
   counted table needs no release of the runner. The models library must be
   v0.6.0 or later, the first release with the file; the sample
-  configuration names v0.6.0, and an older `models.version` is refused
+  configuration names v0.7.1, and an older `models.version` is refused
   with the version to set. The vars of a package are checked against
   the file before any connection.

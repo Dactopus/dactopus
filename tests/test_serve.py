@@ -29,7 +29,7 @@ def _config(
     data = {
         "clickhouse": clickhouse,
         "store": {"timezone": "America/New_York"},
-        "models": {"version": "v0.6.0"},
+        "models": {"version": "v0.7.1"},
         "packages": {name: all_packages[name] for name in packages},
     }
     if serve_section is not None:
@@ -148,9 +148,9 @@ def test_serve_hands_the_files_and_url_to_the_executor(tmp_path, monkeypatch):
 
 def test_serve_error_goes_to_stderr(tmp_path, monkeypatch, capsys):
     path = tmp_path / "dactopus.yaml"
-    assert "version: v0.6.0" in config.SAMPLE
+    assert "version: v0.7.1" in config.SAMPLE
     root = _library(tmp_path, files=[])
-    path.write_text(config.SAMPLE.replace("version: v0.6.0", f"path: {root}"))
+    path.write_text(config.SAMPLE.replace("version: v0.7.1", f"path: {root}"))
     assert main(["serve", "--config", str(path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""

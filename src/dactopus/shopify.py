@@ -1,8 +1,11 @@
-"""Loading Shopify orders from the GraphQL Admin API into the Shopify package's input tables.
+"""Loading Shopify orders and products from the GraphQL Admin API into the
+Shopify package's input tables.
 
-The query and the mapping are those of export_shopify.py in the README of
+The queries and the mapping are those of export_shopify.py in the README of
 dactopus-data-models ("Your store"), so the rows are the ones its recipe
 loads. Bulk operations cannot read refund lines, so orders come in pages.
+A deleted product is gone from the API; the store's events name it, and
+the load appends a version with only its id and the time of the deletion.
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ from clickhouse_connect.driver.client import Client
 from .config import Shopify
 
 API_VERSION = "2026-10"
-TABLES = ("orders", "order_lines", "refunds", "refund_lines")
+TABLES = ("orders", "order_lines", "refunds", "refund_lines", "products")
 # The first load reads every order: no store is older.
 FIRST_LOAD_SINCE = "2000-01-01T00:00:00Z"
 
@@ -62,11 +65,35 @@ QUERY = f"""query ($cursor: String, $filter: String) {{
   }}
 }}"""
 
+# Every product, archived ones and drafts included, 100 per page.
+PRODUCTS_QUERY = """query ($cursor: String, $filter: String) {
+  products(first: 100, after: $cursor, query: $filter, sortKey: UPDATED_AT) {
+    pageInfo { hasNextPage endCursor }
+    nodes { legacyResourceId title productType vendor status isGiftCard updatedAt }
+  }
+}"""
+# The deletions of products, from the store's events; the filter names the
+# subject type and the action. Read on 2026-10-26 (API 2026-10) by an app
+# with read_products and no further scope.
+DELETIONS_QUERY = """query ($cursor: String, $filter: String) {
+  events(first: 100, after: $cursor, query: $filter, sortKey: CREATED_AT) {
+    pageInfo { hasNextPage endCursor }
+    nodes { createdAt ... on BasicEvent { subjectId } }
+  }
+}"""
+# The query of each connection the load reads, and the scope that reads it.
+QUERIES = {
+    "orders": (QUERY, "read_orders"),
+    "products": (PRODUCTS_QUERY, "read_products"),
+    "events": (DELETIONS_QUERY, "read_products"),
+}
+
 # The shop's time zone, Settings > General in the admin; read with API
 # 2026-10 on 2026-10-23 by an app with read_orders.
 ZONE_QUERY = "{ shop { ianaTimezone } }"
 
-Fetch = Callable[[dict[str, Any]], dict[str, Any]]
+# A page of a connection ("orders", "products", "events") for the variables.
+Fetch = Callable[[str, dict[str, Any]], dict[str, Any]]
 Post = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 
@@ -153,9 +180,20 @@ def _graphql(shop: str, token: str, refused: str) -> Post:
 
 
 def graphql(shop: str, token: str) -> Fetch:
-    """A page of orders from the GraphQL Admin API."""
-    post = _graphql(shop, token, "check that the app has read_orders. Run again to resume.")
-    return lambda variables: post(QUERY, variables)["orders"]
+    """A page of orders, products or deletion events from the GraphQL Admin API."""
+    posts = {
+        field: (
+            query,
+            _graphql(shop, token, f"check that the app has {scope}. Run again to resume."),
+        )
+        for field, (query, scope) in QUERIES.items()
+    }
+
+    def fetch(field: str, variables: dict[str, Any]) -> dict[str, Any]:
+        query, post = posts[field]
+        return post(query, variables)[field]
+
+    return fetch
 
 
 def check_time_zone(shop: str, token: str, zone: str) -> None:
@@ -320,35 +358,83 @@ def rows(order: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return tables
 
 
-def since(client: Client, database: str) -> str:
-    """An hour before the latest change loaded, or the first load's start."""
+def product_row(product: dict[str, Any]) -> dict[str, Any]:
+    """The input row of one product, as it is now."""
+    p = product
+    return {
+        "id": int(p["legacyResourceId"]),
+        "title": p["title"],
+        "product_type": p["productType"],
+        "vendor": p["vendor"],
+        "status": p["status"],
+        "is_gift_card": p["isGiftCard"],
+        "updated_at": _ts(p["updatedAt"]),
+    }
+
+
+def deletion_row(event: dict[str, Any]) -> dict[str, Any]:
+    """The version of a deleted product: its id and the time of the deletion.
+
+    The package reads nothing else of it; the other columns get their
+    defaults, as in the recipe.
+    """
+    at = _ts(event["createdAt"])
+    return {"id": _legacy(event["subjectId"]), "updated_at": at, "deleted_at": at}
+
+
+def since(client: Client, database: str, table: str = "orders") -> str:
+    """An hour before the latest change loaded into a table, or the first load's start."""
     return client.query(
         f"SELECT if(count() = 0, {{first:String}}, formatDateTime("
-        f"max(updated_at) - INTERVAL 1 HOUR, '%Y-%m-%dT%H:%i:%SZ')) FROM `{database}`.orders",
+        f"max(updated_at) - INTERVAL 1 HOUR, '%Y-%m-%dT%H:%i:%SZ')) FROM `{database}`.`{table}`",
         parameters={"first": FIRST_LOAD_SINCE},
     ).result_rows[0][0]
 
 
-def load(client: Client, fetch: Fetch, database: str) -> dict[str, int]:
-    """Append the orders updated since the last load, page by page.
-
-    A page's lines and refunds go in before its orders, so the latest
-    order loaded, which the next load starts from, always has them.
-    Returns the number of rows appended to each table.
-    """
-    start = since(client, database)
-    counts = dict.fromkeys(TABLES, 0)
+def _pages(fetch: Fetch, field: str, filter: str):
     page = {"pageInfo": {"hasNextPage": True, "endCursor": None}}
     while page["pageInfo"]["hasNextPage"]:
-        page = fetch({"cursor": page["pageInfo"]["endCursor"], "filter": f"updated_at:>='{start}'"})
+        page = fetch(field, {"cursor": page["pageInfo"]["endCursor"], "filter": filter})
+        yield page["nodes"]
+
+
+def _insert(client: Client, database: str, table: str, rows: list[dict[str, Any]]) -> None:
+    block = "".join(json.dumps(row) + "\n" for row in rows).encode()
+    client.raw_insert(f"`{database}`.`{table}`", insert_block=block, fmt="JSONEachRow")
+
+
+def load(client: Client, fetch: Fetch, database: str) -> dict[str, int]:
+    """Append the orders and products updated since the last load, page by page.
+
+    A page's lines and refunds go in before its orders, so the latest
+    order loaded, which the next load starts from, always has them. The
+    products come after the orders, then the deletions of products since
+    the same time: a deleted product's updated_at is the deletion's time,
+    so the next load starts from it too.
+    Returns the number of rows appended to each table.
+    """
+    counts = dict.fromkeys(TABLES, 0)
+    start = since(client, database, "orders")
+    for orders in _pages(fetch, "orders", f"updated_at:>='{start}'"):
         tables: dict[str, list[dict[str, Any]]] = {t: [] for t in TABLES}
-        for order in page["nodes"]:
+        for order in orders:
             for name, found in rows(order).items():
                 tables[name].extend(found)
         for name in ("order_lines", "refund_lines", "refunds", "orders"):
             if tables[name]:
-                block = "".join(json.dumps(row) + "\n" for row in tables[name]).encode()
-                client.raw_insert(f"`{database}`.`{name}`", insert_block=block, fmt="JSONEachRow")
+                _insert(client, database, name, tables[name])
                 counts[name] += len(tables[name])
-        print(f"shopify: {len(page['nodes'])} orders since {start}", file=sys.stderr)
+        print(f"shopify: {len(orders)} orders since {start}", file=sys.stderr)
+    start = since(client, database, "products")
+    for products in _pages(fetch, "products", f"updated_at:>='{start}'"):
+        if products:
+            _insert(client, database, "products", [product_row(p) for p in products])
+            counts["products"] += len(products)
+        print(f"shopify: {len(products)} products since {start}", file=sys.stderr)
+    deleted = f"subject_type:PRODUCT AND action:destroy AND created_at:>='{start}'"
+    for events in _pages(fetch, "events", deleted):
+        if events:
+            _insert(client, database, "products", [deletion_row(e) for e in events])
+            counts["products"] += len(events)
+        print(f"shopify: {len(events)} deleted products since {start}", file=sys.stderr)
     return counts

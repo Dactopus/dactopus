@@ -21,7 +21,7 @@ def _base() -> dict:
             "database": "canonical",
         },
         "store": {"timezone": "America/New_York"},
-        "models": {"version": "v0.6.0"},
+        "models": {"version": "v0.7.1"},
         "packages": {
             "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
             "shopify": {"shop": "dactopus-dev"},
@@ -34,7 +34,7 @@ def test_sample_loads(tmp_path):
     config.write_sample(path)
     loaded = config.load(path, environ={})
     assert loaded.clickhouse.database == "dactopus"
-    assert loaded.models.version == "v0.6.0"
+    assert loaded.models.version == "v0.7.1"
     assert list(loaded.packages()) == ["ga4", "shopify"]
     assert loaded.workdir == tmp_path.resolve() / ".dactopus"
 
