@@ -31,7 +31,11 @@ a minor release may change the command line and the configuration file.
   with a token from the app's client credentials (`read_orders` and
   `read_products`); a models library before v0.7.0, whose Shopify input
   has no `products`, is refused before anything is loaded, with the
-  version to set. Each package is built with
+  version to set. A refund carries its `processedAt`, the date Shopify's
+  reports count it on and the models library's since v0.7.2; a library
+  before it, or a refunds table an earlier library created, is refused
+  the same way, naming the library's changelog for adding the column.
+  Each package is built with
   `dbt build` and a dbt profile the runner writes, not the one in the
   package; the profile and dbt's output go to `.dactopus/` next to the
   configuration.
@@ -94,6 +98,6 @@ a minor release may change the command line and the configuration file.
   day without rows is a finding. A renamed variable, model file or
   counted table needs no release of the runner. The models library must be
   v0.6.0 or later, the first release with the file; the sample
-  configuration names v0.7.1, and an older `models.version` is refused
+  configuration names v0.7.2, and an older `models.version` is refused
   with the version to set. The vars of a package are checked against
   the file before any connection.

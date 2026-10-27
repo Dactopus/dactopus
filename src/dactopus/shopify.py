@@ -39,6 +39,10 @@ TABLES = (*ORDER_TABLES, "products")
 FIRST_LOAD_SINCE = "2000-01-01T00:00:00Z"
 # The first release of the models library whose Shopify input has products.
 PRODUCTS_SINCE = "v0.7.0"
+# The first release whose refunds have processed_at, the date Shopify's
+# reports count a refund on.
+REFUND_DATE_SINCE = "v0.7.2"
+LIBRARY_CHANGELOG = "https://github.com/Dactopus/dactopus-data-models/blob/main/CHANGELOG.md"
 
 MONEY = "{ shopMoney { amount } }"
 QUERY = f"""query ($cursor: String, $filter: String) {{
@@ -61,7 +65,7 @@ QUERY = f"""query ($cursor: String, $filter: String) {{
         discountAllocations {{ allocatedAmountSet {MONEY} }}
         taxLines {{ rate priceSet {MONEY} }} taxable requiresShipping isGiftCard }} }}
       refunds {{
-        legacyResourceId createdAt updatedAt note totalRefundedSet {MONEY}
+        legacyResourceId createdAt processedAt updatedAt note totalRefundedSet {MONEY}
         refundLineItems(first: 50) {{ pageInfo {{ hasNextPage }} nodes {{
           id lineItem {{ id }} quantity restockType subtotalSet {MONEY} totalTaxSet {MONEY} }} }} }}
     }}
@@ -336,6 +340,7 @@ def rows(order: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
                 "id": rid,
                 "order_id": oid,
                 "created_at": _ts(r["createdAt"]),
+                "processed_at": _ts(r["processedAt"]),
                 "updated_at": refund_updated,
                 "note": r["note"],
                 "total_refunded": _money(r["totalRefundedSet"]),
@@ -397,13 +402,34 @@ def _pages(fetch: Fetch, field: str, filter: str):
         yield page["nodes"]
 
 
-def _require_products(client: Client, database: str) -> None:
-    """Refuse a models library whose Shopify input has no products, before any load."""
+def _require_input(client: Client, database: str) -> None:
+    """Refuse an input the load cannot fill, before any load.
+
+    A models library before PRODUCTS_SINCE has no products table. One before
+    REFUND_DATE_SINCE has no processed_at in refunds; neither has a refunds
+    table that an older library created, as input.sql creates a table only
+    if it is missing. The library's changelog says how to add the column.
+    """
     if not client.command(f"EXISTS TABLE `{database}`.products"):
         raise LoadError(
             f"shopify: the input of the models library has no products table; set "
             f"models.version, or the checkout at models.path, to {PRODUCTS_SINCE} or later; "
             "nothing has been loaded yet."
+        )
+    found = client.command(
+        "SELECT count() FROM system.columns WHERE database = {db:String} "
+        "AND table = 'refunds' AND name = 'processed_at'",
+        parameters={"db": database},
+    )
+    if not found:
+        raise LoadError(
+            f"shopify: the input table {database}.refunds has no processed_at column, the "
+            f"date of a refund since models library {REFUND_DATE_SINCE}. With an older "
+            f"library, set models.version, or the checkout at models.path, to "
+            f"{REFUND_DATE_SINCE} or later. With {REFUND_DATE_SINCE} or later, the table "
+            f"is older than the library: add the column as the library's changelog for "
+            f"{REFUND_DATE_SINCE.removeprefix('v')} says ({LIBRARY_CHANGELOG}), then run "
+            "`dactopus run --full-refresh shopify`. Nothing has been loaded yet."
         )
 
 
@@ -422,7 +448,7 @@ def load(client: Client, fetch: Fetch, database: str) -> dict[str, int]:
     so the next load starts from it too.
     Returns the number of rows appended to each table.
     """
-    _require_products(client, database)
+    _require_input(client, database)
     counts = dict.fromkeys(TABLES, 0)
     start = since(client, database, "orders")
     for orders in _pages(fetch, "orders", f"updated_at:>='{start}'"):
