@@ -126,6 +126,21 @@ def test_next_load_starts_an_hour_before_the_latest_change(shopify_input):
     assert len(_table(client, database, "products")) == 19 + 4
 
 
+def test_a_library_without_products_is_refused_before_loading(shopify_input):
+    """v0.6.x has deployment.yml, which the runner checks, but no products input."""
+    client, database = shopify_input
+    client.command(f"DROP TABLE `{database}`.products")
+    api = FakeAPI(ALL)
+    with pytest.raises(shopify.LoadError) as refused:
+        shopify.load(client, api, database)
+    assert str(refused.value) == (
+        "shopify: the input of the models library has no products table; set models.version, "
+        "or the checkout at models.path, to v0.7.0 or later; nothing has been loaded yet."
+    )
+    assert api.calls == []
+    assert _table(client, database, "orders") == []
+
+
 def _recipe_script(library: Path) -> str:
     readme = (library / "README.md").read_text()
     block = readme.split("<summary>export_shopify.py</summary>", 1)[1]

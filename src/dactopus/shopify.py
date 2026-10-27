@@ -33,9 +33,12 @@ from clickhouse_connect.driver.client import Client
 from .config import Shopify
 
 API_VERSION = "2026-10"
-TABLES = ("orders", "order_lines", "refunds", "refund_lines", "products")
-# The first load reads every order: no store is older.
+ORDER_TABLES = ("orders", "order_lines", "refunds", "refund_lines")
+TABLES = (*ORDER_TABLES, "products")
+# The first load reads every order, product and deletion: no store is older.
 FIRST_LOAD_SINCE = "2000-01-01T00:00:00Z"
+# The first release of the models library whose Shopify input has products.
+PRODUCTS_SINCE = "v0.7.0"
 
 MONEY = "{ shopMoney { amount } }"
 QUERY = f"""query ($cursor: String, $filter: String) {{
@@ -65,7 +68,8 @@ QUERY = f"""query ($cursor: String, $filter: String) {{
   }}
 }}"""
 
-# Every product, archived ones and drafts included, 100 per page.
+# Every product, 100 per page: archived ones and drafts come without a
+# status filter (the development store on 2026-10-27, tests/fixtures).
 PRODUCTS_QUERY = """query ($cursor: String, $filter: String) {
   products(first: 100, after: $cursor, query: $filter, sortKey: UPDATED_AT) {
     pageInfo { hasNextPage endCursor }
@@ -94,7 +98,9 @@ ZONE_QUERY = "{ shop { ianaTimezone } }"
 
 # A page of a connection ("orders", "products", "events") for the variables.
 Fetch = Callable[[str, dict[str, Any]], dict[str, Any]]
-Post = Callable[[str, dict[str, Any]], dict[str, Any]]
+# The data of a query for the variables; the string is the next action when
+# the API refuses the query.
+Post = Callable[[str, dict[str, Any], str], dict[str, Any]]
 
 
 class LoadError(Exception):
@@ -149,7 +155,7 @@ def _unreachable(shop: str, exc: OSError) -> str:
     )
 
 
-def _graphql(shop: str, token: str, refused: str) -> Post:
+def _graphql(shop: str, token: str) -> Post:
     """The data of a query to the GraphQL Admin API, waiting out throttling.
 
     ``refused`` is the next action when the API answers with an HTTP error.
@@ -157,7 +163,7 @@ def _graphql(shop: str, token: str, refused: str) -> Post:
     url = f"https://{shop}.myshopify.com/admin/api/{API_VERSION}/graphql.json"
     headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
 
-    def post(query: str, variables: dict[str, Any]) -> dict[str, Any]:
+    def post(query: str, variables: dict[str, Any], refused: str) -> dict[str, Any]:
         payload = json.dumps({"query": query, "variables": variables}).encode()
         while True:
             try:
@@ -181,29 +187,22 @@ def _graphql(shop: str, token: str, refused: str) -> Post:
 
 def graphql(shop: str, token: str) -> Fetch:
     """A page of orders, products or deletion events from the GraphQL Admin API."""
-    posts = {
-        field: (
-            query,
-            _graphql(shop, token, f"check that the app has {scope}. Run again to resume."),
-        )
-        for field, (query, scope) in QUERIES.items()
-    }
+    post = _graphql(shop, token)
 
     def fetch(field: str, variables: dict[str, Any]) -> dict[str, Any]:
-        query, post = posts[field]
-        return post(query, variables)[field]
+        query, scope = QUERIES[field]
+        refused = f"check that the app has {scope}. Run again to resume."
+        return post(query, variables, refused)[field]
 
     return fetch
 
 
 def check_time_zone(shop: str, token: str, zone: str) -> None:
     """Refuse a store.timezone other than the shop's: the orders' days would be off."""
-    post = _graphql(
-        shop,
-        token,
-        "check that the app is installed on the store and run again; nothing has been loaded yet.",
+    refused = (
+        "check that the app is installed on the store and run again; nothing has been loaded yet."
     )
-    found = post(ZONE_QUERY, {})["shop"]["ianaTimezone"]
+    found = _graphql(shop, token)(ZONE_QUERY, {}, refused)["shop"]["ianaTimezone"]
     if not _same_zone(zone, found):
         raise LoadError(
             f"shopify: the time zone of {shop}.myshopify.com is {found}, and store.timezone "
@@ -268,7 +267,7 @@ def _nodes(conn, what):
 
 def rows(order: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """The input rows of one order: the order, its lines, refunds and refund lines."""
-    tables: dict[str, list[dict[str, Any]]] = {t: [] for t in TABLES}
+    tables: dict[str, list[dict[str, Any]]] = {t: [] for t in ORDER_TABLES}
     o = order
     oid, updated = int(o["legacyResourceId"]), _ts(o["updatedAt"])
     ship = _nodes(o["shippingLines"], "shipping lines")
@@ -382,7 +381,7 @@ def deletion_row(event: dict[str, Any]) -> dict[str, Any]:
     return {"id": _legacy(event["subjectId"]), "updated_at": at, "deleted_at": at}
 
 
-def since(client: Client, database: str, table: str = "orders") -> str:
+def since(client: Client, database: str, table: str) -> str:
     """An hour before the latest change loaded into a table, or the first load's start."""
     return client.query(
         f"SELECT if(count() = 0, {{first:String}}, formatDateTime("
@@ -396,6 +395,16 @@ def _pages(fetch: Fetch, field: str, filter: str):
     while page["pageInfo"]["hasNextPage"]:
         page = fetch(field, {"cursor": page["pageInfo"]["endCursor"], "filter": filter})
         yield page["nodes"]
+
+
+def _require_products(client: Client, database: str) -> None:
+    """Refuse a models library whose Shopify input has no products, before any load."""
+    if not client.command(f"EXISTS TABLE `{database}`.products"):
+        raise LoadError(
+            f"shopify: the input of the models library has no products table; set "
+            f"models.version, or the checkout at models.path, to {PRODUCTS_SINCE} or later; "
+            "nothing has been loaded yet."
+        )
 
 
 def _insert(client: Client, database: str, table: str, rows: list[dict[str, Any]]) -> None:
@@ -413,10 +422,11 @@ def load(client: Client, fetch: Fetch, database: str) -> dict[str, int]:
     so the next load starts from it too.
     Returns the number of rows appended to each table.
     """
+    _require_products(client, database)
     counts = dict.fromkeys(TABLES, 0)
     start = since(client, database, "orders")
     for orders in _pages(fetch, "orders", f"updated_at:>='{start}'"):
-        tables: dict[str, list[dict[str, Any]]] = {t: [] for t in TABLES}
+        tables: dict[str, list[dict[str, Any]]] = {t: [] for t in ORDER_TABLES}
         for order in orders:
             for name, found in rows(order).items():
                 tables[name].extend(found)
