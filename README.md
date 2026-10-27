@@ -60,14 +60,15 @@ runs `dbt build` of each package. A load reads only what changed:
 | Source | Read from | Next load |
 | --- | --- | --- |
 | GA4 | The daily `events_YYYYMMDD` tables of the BigQuery export, with the Storage Read API | The days from the latest loaded one minus `ga4_lookback_days`, which replace what was loaded for them |
-| Shopify | Orders with their lines, shipping and refunds, 25 per page, from the GraphQL Admin API | The orders updated from an hour before the latest loaded change, appended |
+| Shopify | Orders with their lines, shipping and refunds, 25 per page, then the products, archived ones and drafts included, and the deletions of products from the store's events, from the GraphQL Admin API | The orders and the products updated from an hour before the latest loaded change of their kind, appended; a deleted product as a version with the time of the deletion |
 
 GA4 reads need Google credentials: a service account key named in the
 file, or Application Default Credentials (`gcloud auth
 application-default login`). The read sessions run in the configured
-project, which pays for them. Shopify needs an app with `read_orders`,
-installed on the store, and its client id and secret; without
-`read_all_orders` Shopify returns the last 60 days of orders only.
+project, which pays for them. Shopify needs an app with `read_orders`
+and `read_products`, installed on the store, and its client id and
+secret; without `read_all_orders` Shopify returns the last 60 days of
+orders only.
 
 The runner writes the dbt profile the packages name (`profile: dactopus`)
 from the configuration, without the password, which dbt reads from the

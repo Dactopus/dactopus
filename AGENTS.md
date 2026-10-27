@@ -34,9 +34,9 @@ In scope:
   library, the packages to run and their parameters.
 - Loading GA4: the BigQuery export, read with the Storage Read API, into
   the GA4 package's input table.
-- Loading Shopify: orders with lines, shipping and refunds, read page by
-  page from the GraphQL Admin API, into the Shopify package's input
-  tables.
+- Loading Shopify: orders with lines, shipping and refunds, and the
+  products with their deletions, read page by page from the GraphQL
+  Admin API, into the Shopify package's input tables.
 - Running the packages with dbt.
 - Checks behind a plugin interface, built-in checks, and one report a
   store owner can read.
@@ -143,11 +143,12 @@ do not depend on each other; no root dbt project is generated.
   it as is, no struct projection, no Parquet on disk; incremental loads
   reread the daily tables from `max(event_date)` in the input minus the
   package's `ga4_lookback_days` (default 3) and replace those days.
-  Shopify: pages of 25 orders with lines, shipping and refunds; an
-  incremental load filters `updated_at:>=` from the latest loaded change
-  minus one hour and appends the versions it gets (the package keeps
-  every version and dedupes). Bulk operations do not deliver refund
-  lines; do not use them for the full load.
+  Shopify: pages of 25 orders with lines, shipping and refunds, then
+  pages of 100 products and the deletions of products from the store's
+  events; an incremental load filters `updated_at:>=` from the latest
+  loaded change of its kind minus one hour and appends the versions it
+  gets (the package keeps every version and dedupes). Bulk operations do
+  not deliver refund lines; do not use them for the full load.
 - A check is a named object that takes a ClickHouse connection and the
   installation's configuration and returns findings. A finding has one
   shape for built-in and plugin checks alike: check, object, severity,

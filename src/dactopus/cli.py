@@ -120,7 +120,7 @@ def _run(args: argparse.Namespace) -> int:
         with _step(f"ga4: loading into {database}.{ga4.TABLE}", _AGAIN):
             ga4.load(client, export, database, ga4.lookback_days(cfg.ga4, root))
     if cfg.shopify is not None:
-        with _step(f"shopify: loading orders into {database}", _AGAIN):
+        with _step(f"shopify: loading orders and products into {database}", _AGAIN):
             shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
     for package in cfg.packages():
         build.build(cfg, root, package, full_refresh=package in refresh)

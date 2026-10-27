@@ -1,0 +1,196 @@
+{
+ "products": [
+  {
+   "pageInfo": {
+    "hasNextPage": true,
+    "endCursor": "products-2"
+   },
+   "nodes": [
+    {
+     "legacyResourceId": "15408877797554",
+     "title": "The Archived Snowboard",
+     "productType": "snowboard",
+     "vendor": "Snowboard Vendor",
+     "status": "ARCHIVED",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:27Z"
+    },
+    {
+     "legacyResourceId": "15408877863090",
+     "title": "The Out of Stock Snowboard",
+     "productType": "snowboard",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:27Z"
+    },
+    {
+     "legacyResourceId": "15408877895858",
+     "title": "The Collection Snowboard: Hydrogen",
+     "productType": "snowboard",
+     "vendor": "Hydrogen Vendor",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:28Z"
+    },
+    {
+     "legacyResourceId": "15408877994162",
+     "title": "The Draft Snowboard",
+     "productType": "snowboard",
+     "vendor": "Snowboard Vendor",
+     "status": "DRAFT",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:28Z"
+    },
+    {
+     "legacyResourceId": "15408878092466",
+     "title": "The Multi-location Snowboard",
+     "productType": "snowboard",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:28Z"
+    },
+    {
+     "legacyResourceId": "15408878125234",
+     "title": "The Multi-managed Snowboard",
+     "productType": "snowboard",
+     "vendor": "Multi-managed Vendor",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:28Z"
+    },
+    {
+     "legacyResourceId": "15408878026930",
+     "title": "The Hidden Snowboard",
+     "productType": "snowboard",
+     "vendor": "Snowboard Vendor",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:29Z"
+    },
+    {
+     "legacyResourceId": "15408878158002",
+     "title": "The 3p Fulfilled Snowboard",
+     "productType": "snowboard",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:29Z"
+    },
+    {
+     "legacyResourceId": "15408878190770",
+     "title": "The Collection Snowboard: Oxygen",
+     "productType": "snowboard",
+     "vendor": "Hydrogen Vendor",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:29Z"
+    },
+    {
+     "legacyResourceId": "15408878256306",
+     "title": "The Collection Snowboard: Liquid",
+     "productType": "snowboard",
+     "vendor": "Hydrogen Vendor",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-05T18:53:30Z"
+    }
+   ]
+  },
+  {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "products-end"
+   },
+   "nodes": [
+    {
+     "legacyResourceId": "15408877732018",
+     "title": "The Complete Snowboard",
+     "productType": "snowboard",
+     "vendor": "Snowboard Vendor",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-06T03:15:56Z"
+    },
+    {
+     "legacyResourceId": "15408877666482",
+     "title": "Gift Card",
+     "productType": "giftcard",
+     "vendor": "Snowboard Vendor",
+     "status": "ACTIVE",
+     "isGiftCard": true,
+     "updatedAt": "2026-10-06T03:59:37Z"
+    },
+    {
+     "legacyResourceId": "15408877830322",
+     "title": "The Videographer Snowboard",
+     "productType": "snowboard",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-06T05:49:09Z"
+    },
+    {
+     "legacyResourceId": "15410383585458",
+     "title": "Cotton T-Shirt",
+     "productType": "T-Shirt",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-06T05:54:07Z"
+    },
+    {
+     "legacyResourceId": "15408877928626",
+     "title": "The Compare at Price Snowboard",
+     "productType": "snowboard",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-16T18:25:33Z"
+    },
+    {
+     "legacyResourceId": "15408877961394",
+     "title": "Selling Plans Ski Wax",
+     "productType": "accessories",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-26T08:04:16Z"
+    },
+    {
+     "legacyResourceId": "15408877699250",
+     "title": "The Inventory Not Tracked Snowboard",
+     "productType": "snowboard",
+     "vendor": "dactopus-dev",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-26T08:04:17Z"
+    },
+    {
+     "legacyResourceId": "15408877764786",
+     "title": "The Minimal Snowboard",
+     "productType": "snowboard-test",
+     "vendor": "Acme Boards",
+     "status": "ACTIVE",
+     "isGiftCard": false,
+     "updatedAt": "2026-10-26T12:41:14Z"
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "events-end"
+   },
+   "nodes": [
+    {
+     "createdAt": "2026-10-26T08:57:04Z",
+     "subjectId": "gid://shopify/Product/15441296064690"
+    }
+   ]
+  }
+ ]
+}
