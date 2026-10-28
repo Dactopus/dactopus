@@ -37,11 +37,10 @@ ORDER_TABLES = ("orders", "order_lines", "refunds", "refund_lines")
 TABLES = (*ORDER_TABLES, "products")
 # The first load reads every order, product and deletion: no store is older.
 FIRST_LOAD_SINCE = "2000-01-01T00:00:00Z"
-# The first release of the models library whose Shopify input has products.
-PRODUCTS_SINCE = "v0.7.0"
-# The first release whose refunds have processed_at, the date Shopify's
-# reports count a refund on.
-REFUND_DATE_SINCE = "v0.7.2"
+# The first release of the models library whose Shopify input the load
+# fills: products came in v0.7.0, refunds.processed_at (the date Shopify's
+# reports count a refund on) in v0.7.2.
+LIBRARY_SINCE = "v0.7.2"
 LIBRARY_CHANGELOG = "https://github.com/Dactopus/dactopus-data-models/blob/main/CHANGELOG.md"
 
 MONEY = "{ shopMoney { amount } }"
@@ -405,15 +404,15 @@ def _pages(fetch: Fetch, field: str, filter: str):
 def _require_input(client: Client, database: str) -> None:
     """Refuse an input the load cannot fill, before any load.
 
-    A models library before PRODUCTS_SINCE has no products table. One before
-    REFUND_DATE_SINCE has no processed_at in refunds; neither has a refunds
+    A models library before v0.7.0 has no products table. One before
+    LIBRARY_SINCE has no processed_at in refunds; neither has a refunds
     table that an older library created, as input.sql creates a table only
     if it is missing. The library's changelog says how to add the column.
     """
     if not client.command(f"EXISTS TABLE `{database}`.products"):
         raise LoadError(
             f"shopify: the input of the models library has no products table; set "
-            f"models.version, or the checkout at models.path, to {PRODUCTS_SINCE} or later; "
+            f"models.version, or the checkout at models.path, to {LIBRARY_SINCE} or later; "
             "nothing has been loaded yet."
         )
     found = client.command(
@@ -424,11 +423,11 @@ def _require_input(client: Client, database: str) -> None:
     if not found:
         raise LoadError(
             f"shopify: the input table {database}.refunds has no processed_at column, the "
-            f"date of a refund since models library {REFUND_DATE_SINCE}. With an older "
+            f"date of a refund since models library {LIBRARY_SINCE}. With an older "
             f"library, set models.version, or the checkout at models.path, to "
-            f"{REFUND_DATE_SINCE} or later. With {REFUND_DATE_SINCE} or later, the table "
+            f"{LIBRARY_SINCE} or later. With {LIBRARY_SINCE} or later, the table "
             f"is older than the library: add the column as the library's changelog for "
-            f"{REFUND_DATE_SINCE.removeprefix('v')} says ({LIBRARY_CHANGELOG}), then run "
+            f"{LIBRARY_SINCE.removeprefix('v')} says ({LIBRARY_CHANGELOG}), then run "
             "`dactopus run --full-refresh shopify`. Nothing has been loaded yet."
         )
 
