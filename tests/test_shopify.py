@@ -144,7 +144,7 @@ def test_a_library_without_products_is_refused_before_loading(shopify_input):
         shopify.load(client, api, database)
     assert str(refused.value) == (
         "shopify: the input of the models library has no products table; set models.version, "
-        "or the checkout at models.path, to v0.7.0 or later; nothing has been loaded yet."
+        "or the checkout at models.path, to v0.7.2 or later; nothing has been loaded yet."
     )
     assert api.calls == []
     assert _table(client, database, "orders") == []
