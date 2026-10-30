@@ -2,8 +2,8 @@
 
 Decisions with the reasons behind them, recorded so they are not
 relitigated without new evidence. The rules themselves are in
-[AGENTS.md](../AGENTS.md); the reasoning is here, with the date each
-decision was taken.
+[AGENTS.md](../AGENTS.md); the reasoning is here, with the date of a
+decision where one was recorded.
 
 ## A thin runner over steps that already existed (5 October 2026)
 
@@ -30,18 +30,20 @@ The declaration is a file of its own rather than dbt `meta` because its
 values are needed before the first build and in `serve`, where dbt does
 not run; `meta` would be readable only from `manifest.json`, which
 exists after a run. A consequence: a package without a loader
-(WooCommerce, whose tables reach ClickHouse by CDC) costs the runner a
-configuration section and nothing else. A gap between the library and
-the runner is fixed in the library, never patched around here.
+(WooCommerce, whose tables reach ClickHouse by CDC) will cost the runner
+a configuration section and nothing else; 0.1.0 accepts `ga4` and
+`shopify` only. A gap between the library and the runner is fixed in the
+library, never patched around here.
 
 ## The executor knows nothing of Dactopus
 
 The runner is a consumer of dactopus-ossie-clickhouse like any other.
-The one thing the prototype needed from it, several model files read as
-one model, was proposed and shipped there (0.8.0) as a feature for every
-Ossie user. The runner lists the files; the executor combines them and
-reads their tables in the database of the connection URL, so no database
-name is written into a model.
+What the prototype needed from it was proposed and shipped there as
+features for every Ossie user: several model files read as one model
+(0.8.0) and TLS decided by the URL scheme on every port (0.9.5, below).
+The runner lists the files; the executor combines them and reads their
+tables in the database of the connection URL, so no database name is
+written into a model.
 
 ## dbt v1 (5 October 2026)
 
@@ -134,12 +136,14 @@ runner is a direct call.
 
 The first conversations with brands need orders, not sessions alone, so
 Shopify joined GA4 in the prototype. The loader is a GraphQL client of
-this repository, not dlt's Shopify source: that source reads the legacy
+this repository. dlt's Shopify source was ruled out: it reads the legacy
 REST Admin API 2023-10, a dependency on an API that is going away. The
 cost is on the client's side: an app with `read_orders` and
-`read_products` installed on the store, and Shopify's approval of
-`read_all_orders` for orders older than 60 days. Bulk operations do not
-deliver refund lines, so the full load pages like the incremental one.
+`read_products` installed on the store, and `read_all_orders` for orders
+older than 60 days, which an app created in the store's own organization
+gets without a request; a partner's app asks Shopify for it. Bulk
+operations do not deliver refund lines, so the full load pages like the
+incremental one.
 
 ## GA4 without Parquet on disk
 
@@ -148,7 +152,8 @@ Read API as Arrow and inserts it as is, with no Parquet on disk and no
 ClickHouse binaries on the machine. The full load of the public sample
 (4.3 million events, 92 days) took 33 minutes at first and 6 to 7 after
 two changes, no longer than the library's recipe on the same machine:
-LZ4 compression on the reads and one Storage Read client for all days.
+LZ4 compression on the reads, and a Storage Read client opened per day,
+since one client reused over many days read them slower and slower.
 The runner decodes the Arrow stream itself, since the client library's
 `to_arrow` is deprecated. The sample serves one stream per day; whether
 that is enough for the days of a large brand is untested. The intraday
@@ -157,10 +162,11 @@ is open.
 
 ## What 0.1.0 was accepted on (27 and 28 October 2026)
 
-GA4: a 2026 export of a property with synthetic e-commerce events,
-loaded into databases of its own; 26 checks passed, and the agent's
-answers through `serve` about sessions, purchases, sources and devices
-equalled queries written by hand.
+GA4: the public sample, whose input equalled the library's recipe row
+for row, and a 2026 export of a property with synthetic e-commerce
+events, loaded into databases of its own; 26 checks passed, and the
+agent's answers through `serve` about sessions, purchases, sources and
+devices equalled queries written by hand.
 
 Shopify: a development store with a scripted history of 440 orders, 52
 refunds and 6 cancellations, created from a registry of expected numbers
