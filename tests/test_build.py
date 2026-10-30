@@ -22,7 +22,7 @@ def _config(tmp_path, database="canonical", models=None):
                     "database": database,
                 },
                 "store": {"timezone": "America/New_York"},
-                "models": models or {"version": "v0.7.2"},
+                "models": models or {"version": "v0.8.0"},
                 "packages": {"shopify": {"shop": "s"}},
             }
         )

@@ -314,7 +314,7 @@ store:
 
 models:
   # A release of dactopus-data-models, downloaded once into ~/.cache/dactopus.
-  version: v0.7.2
+  version: v0.8.0
   # Or a checkout of the library, for development:
   # path: ../dactopus-data-models
 
