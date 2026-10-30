@@ -191,7 +191,7 @@ def _fixture(client, library, package, database):
 
 
 def test_check_builds_the_report_over_the_library_fixtures(
-    clickhouse, models_library, tmp_path, capsys
+    clickhouse, models_library, sample, tmp_path, capsys
 ):
     """End to end on a server: dbt test and source freshness through the runner, then the report.
 
@@ -204,7 +204,7 @@ def test_check_builds_the_report_over_the_library_fixtures(
     raw = f"{database}_raw"
     path = tmp_path / "dactopus.yaml"
     path.write_text(
-        config.SAMPLE.replace("dactopus_raw", raw)
+        sample.replace("dactopus_raw", raw)
         .replace("database: dactopus\n", f"database: {database}\n")
         .replace("timezone: UTC", "timezone: America/New_York")
     )
@@ -237,7 +237,7 @@ def _rows(client, database, table):
 
 
 def test_full_refresh_rebuilds_the_named_package_from_the_input(
-    clickhouse, models_library, tmp_path, monkeypatch
+    clickhouse, models_library, sample, tmp_path, monkeypatch
 ):
     """`run --full-refresh shopify` over the library fixtures, with the loads stubbed out.
 
@@ -252,7 +252,7 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
     raw = f"{database}_raw"
     path = tmp_path / "dactopus.yaml"
     path.write_text(
-        config.SAMPLE.replace("dactopus_raw", raw).replace(
+        sample.replace("dactopus_raw", raw).replace(
             "database: dactopus\n", f"database: {database}\n"
         )
     )

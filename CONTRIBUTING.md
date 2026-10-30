@@ -15,8 +15,9 @@ uv run pytest -m "not integration"     # unit tests, no server needed
 ```
 
 Integration tests need a ClickHouse server reachable over HTTP at
-`DACTOPUS_CLICKHOUSE_URL` (default `http://127.0.0.1:8123`) and skip
-without one.
+`DACTOPUS_CLICKHOUSE_URL` (user, host and port, without the password;
+default `http://127.0.0.1:8123`), with the password in
+`CLICKHOUSE_PASSWORD`, and skip without one.
 
 ```bash
 uv run ruff check src tests
