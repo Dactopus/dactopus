@@ -223,17 +223,19 @@ of the executor.
 
 The runner does not:
 
-- load sources other than GA4 and Shopify. A database (WooCommerce on
-  MySQL) reaches ClickHouse by CDC the client sets up, and the runner
-  reads the tables it finds;
+- load sources other than GA4 and Shopify, or run a package it has no
+  loader for: only `ga4` and `shopify` are accepted under `packages`. A
+  database (WooCommerce on MySQL) is to reach ClickHouse by CDC the
+  client sets up, with the runner reading the tables it finds;
 - schedule runs, send alerts or keep a run history; runs are started by
   hand or by cron;
 - link GA4 sessions to Shopify orders; the two models answer apart;
 - migrate a client's dbt or Looker;
 - ship as a Docker image or an installer.
 
-It was accepted on a real GA4 export and on a development store with a
-scripted history of 440 orders; a store with tens of thousands of orders
+It was accepted on the public GA4 sample, on a 2026 GA4 export with
+synthetic e-commerce events and on a development store with a scripted
+history of 440 orders; a store with tens of thousands of orders
 and a server that terminates TLS are untested. The decisions behind the
 runner and what each was verified on: [docs/design.md](docs/design.md).
 
