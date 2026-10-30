@@ -9,7 +9,8 @@ ClickHouse, builds the canonical e-commerce tables, checks them, and
 serves their [Apache Ossie](https://github.com/apache/ossie) models to AI
 agents over [MCP](https://modelcontextprotocol.io).
 
-Under construction: nothing is released. Every command works.
+A prototype; 0.1.0 is the first release. While the major version is 0, a
+minor release may change the command line and the configuration file.
 
 ## How the parts fit
 
@@ -22,6 +23,28 @@ Under construction: nothing is released. Every command works.
 The runner owns delivery of data to a package's input tables and running
 the package. The library owns the input contract and the transformations.
 The executor knows nothing of Dactopus.
+
+## Install
+
+Python 3.11 or later, [uv](https://docs.astral.sh/uv/) and git. The
+runner is not on PyPI: the executor it depends on is a git dependency,
+which PyPI does not accept.
+
+```bash
+uv tool install git+https://github.com/Dactopus/dactopus@v0.1.0
+```
+
+The `dactopus` command gets its own environment with dbt, the dbt
+ClickHouse adapter and the executor. The machine needs no ClickHouse
+binaries; the runner connects to the client's ClickHouse server over HTTP.
+
+Then, in the folder of the installation:
+
+```bash
+dactopus init     # writes dactopus.yaml; edit it
+dactopus run      # loads, builds, checks, writes the report
+dactopus serve    # the MCP server for an AI agent, over stdio
+```
 
 ## Commands
 

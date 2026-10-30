@@ -7,10 +7,14 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
+The first release, a prototype.
+
 ### Added
 
-- The repository: the `dactopus` command with `init`, `run`, `check` and
-  `serve`.
+- The `dactopus` command with `init`, `run`, `check` and `serve`,
+  installed with `uv tool install` from a release tag on GitHub.
 - The configuration file `dactopus.yaml`: the ClickHouse connection, over
   TLS for an `https://` URL (port 8443 by default), with the password from
   an environment variable, the databases for input and
@@ -101,3 +105,6 @@ a minor release may change the command line and the configuration file.
   configuration names v0.8.0, and an older `models.version` is refused
   with the version to set. The vars of a package are checked against
   the file before any connection.
+
+[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.1.0
