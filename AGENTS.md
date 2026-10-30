@@ -212,7 +212,7 @@ maintainer, not by an agent on its own.
 
 ## Repository status
 
-A prototype under construction; nothing is released. Versions follow
+A prototype; 0.1.0 is the first release. Versions follow
 Semantic Versioning, the changelog follows Keep a Changelog, a release is
 the tag `vX.Y.Z` with the GitHub release titled `X.Y.Z`. Pull requests
 are merged with rebase.
