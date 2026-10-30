@@ -219,6 +219,24 @@ The tools the agent gets and how to check the server without one:
 [MCP setup](https://github.com/Dactopus/dactopus-ossie-clickhouse/blob/main/docs/mcp-setup.md)
 of the executor.
 
+## Scope of 0.1.0
+
+The runner does not:
+
+- load sources other than GA4 and Shopify. A database (WooCommerce on
+  MySQL) reaches ClickHouse by CDC the client sets up, and the runner
+  reads the tables it finds;
+- schedule runs, send alerts or keep a run history; runs are started by
+  hand or by cron;
+- link GA4 sessions to Shopify orders; the two models answer apart;
+- migrate a client's dbt or Looker;
+- ship as a Docker image or an installer.
+
+It was accepted on a real GA4 export and on a development store with a
+scripted history of 440 orders; a store with tens of thousands of orders
+and a server that terminates TLS are untested. The decisions behind the
+runner and what each was verified on: [docs/design.md](docs/design.md).
+
 ## Development
 
 Python 3.11 or later and [uv](https://docs.astral.sh/uv/).
