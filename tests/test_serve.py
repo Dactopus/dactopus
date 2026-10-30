@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -185,7 +184,7 @@ metrics:
 """
 
 
-def test_serve_user_with_read_grants_is_enough(tmp_path, clickhouse):
+def test_serve_user_with_read_grants_is_enough(tmp_path, clickhouse, server_url):
     """The executor connects with the URL serve builds, as a serve user whose
     password needs quoting and who may only read the canonical database, and
     answers a question there."""
@@ -202,10 +201,9 @@ def test_serve_user_with_read_grants_is_enough(tmp_path, clickhouse):
     server.command(f"CREATE USER `{user}` IDENTIFIED BY '{secret}'")
     try:
         server.command(f"GRANT SELECT ON `{database}`.* TO `{user}`")
-        base = urlsplit(os.environ.get("DACTOPUS_CLICKHOUSE_URL", "http://127.0.0.1:8123"))
         cfg = _config(
             tmp_path,
-            f"http://{base.netloc}",
+            server_url,
             # Only the serve user's password: the agent's environment has no other.
             environ={"AGENT_PASSWORD": secret},
             database=database,

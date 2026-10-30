@@ -179,8 +179,9 @@ do not depend on each other; no root dbt project is generated.
   the library's `tests/<source>/check_numbers.py` pass over tables the
   runner loaded.
 - Tests that use the `clickhouse` fixture are integration tests: they
-  need a server at `DACTOPUS_CLICKHOUSE_URL` (default
-  `http://127.0.0.1:8123`) and skip otherwise. Tests that need BigQuery
+  need a server at `DACTOPUS_CLICKHOUSE_URL` (user, host and port, as
+  `clickhouse.url`; default `http://127.0.0.1:8123`), with the password
+  in `CLICKHOUSE_PASSWORD`, and skip otherwise. Tests that need BigQuery
   or Shopify credentials skip without them; loader logic is tested on
   recorded Arrow and JSON fixtures.
 - Every change to library code comes with a test. Facts about the
