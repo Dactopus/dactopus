@@ -7,6 +7,14 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-30
+
+### Added
+
+- `docs/design.md`: the decisions behind the runner, the reasons for
+  each and what each was verified on. The README gains the scope of
+  0.1.0: what the runner does not do and what it is untested on.
+
 ## [0.1.0] - 2026-10-30
 
 The first release, a prototype.
@@ -106,5 +114,6 @@ The first release, a prototype.
   with the version to set. The vars of a package are checked against
   the file before any connection.
 
-[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Dactopus/dactopus/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.1.0
