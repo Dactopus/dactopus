@@ -98,6 +98,6 @@ a minor release may change the command line and the configuration file.
   day without rows is a finding. A renamed variable, model file or
   counted table needs no release of the runner. The models library must be
   v0.6.0 or later, the first release with the file; the sample
-  configuration names v0.7.2, and an older `models.version` is refused
+  configuration names v0.8.0, and an older `models.version` is refused
   with the version to set. The vars of a package are checked against
   the file before any connection.
