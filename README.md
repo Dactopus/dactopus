@@ -31,7 +31,7 @@ runner is not on PyPI: the executor it depends on is a git dependency,
 which PyPI does not accept.
 
 ```bash
-uv tool install git+https://github.com/Dactopus/dactopus@v0.1.0
+uv tool install git+https://github.com/Dactopus/dactopus@v0.1.1
 ```
 
 The `dactopus` command gets its own environment with dbt, the dbt

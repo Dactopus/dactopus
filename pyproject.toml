@@ -1,6 +1,6 @@
 [project]
 name = "dactopus"
-version = "0.1.0"
+version = "0.1.1"
 description = "Runner of Dactopus: loads sources into ClickHouse, builds the canonical tables, runs checks, serves the models over MCP"
 readme = "README.md"
 license = "Apache-2.0"
