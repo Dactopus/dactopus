@@ -53,8 +53,8 @@ GitHub release is titled `X.Y.Z`.
    before the tag.
 5. Tag the commit on `main`, never one on the branch: rebasing changes the
    hashes. Publishing the release on GitHub runs the Publish workflow,
-   which checks that the tag is the version in `pyproject.toml` and
-   uploads to PyPI. The release notes are the changelog section plus the
+   which checks that the tag is the version in `pyproject.toml` and its
+   commit is on `main`, then uploads to PyPI. The release notes are the changelog section plus the
    install line pinned to the version.
 
 ```bash
