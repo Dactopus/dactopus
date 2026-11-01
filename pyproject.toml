@@ -22,7 +22,7 @@ dependencies = [
     "certifi>=2024.2",
     "clickhouse-connect[arrow]>=0.8",
     "dbt-clickhouse~=1.10.0",
-    "dbt-core~=1.11.0",
+    "dbt-core>=1.11,<1.13",
     # While its major version is 0, a minor release may change its Python API.
     "dactopus-ossie-clickhouse[mcp]~=0.13.0",
     "google-auth>=2.30",
