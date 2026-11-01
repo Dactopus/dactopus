@@ -31,7 +31,7 @@ jobs:
       - run: uvx twine check --strict dist/*  # the README is the PyPI page
       - name: The wheel works on its own, outside the checkout
         run: |
-          uv venv "$RUNNER_TEMP/wheel"
+          uv venv --python 3.13 "$RUNNER_TEMP/wheel"
           uv pip install --python "$RUNNER_TEMP/wheel" "$(ls dist/*.whl)"
           cd "$RUNNER_TEMP" && wheel/bin/dactopus init --config sample.yaml
           wheel/bin/python -c "import dactopus.serve, dactopus_ossie_clickhouse.mcp_server"
