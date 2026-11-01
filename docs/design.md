@@ -56,6 +56,34 @@ without Python weighs more then than the adapter's maturity. SQLMesh was
 ruled out: it needs a state database of its own, and ClickHouse is not
 fit for that role.
 
+## Python 3.11 to 3.13 (1 November 2026)
+
+dbt-core 1.11 does not start on Python 3.14: it caps mashumaro below
+3.15, and `dbt --version` fails in mashumaro 3.14 with
+`UnserializableField`. dbt-core 1.12.6 starts on 3.14 with mashumaro
+3.17 (3.15 and 3.16 fail) and built the same tables as 1.11 from the
+same input: 4.3 million GA4 events and 489 Shopify orders, every table
+equal in rows and in a hash of all columns, the same report. It was
+not taken: 1.12 and 1.13.0b1 require `dbt-core-experimental-parser`, a
+Rust binary in alpha, published on PyPI as a source package whose build
+downloads a wheel from GitHub. An install then needs github.com, not
+only PyPI ([dbt#15670](https://github.com/dbt-labs/dbt/issues/15670)),
+and a certificate store in the Python that builds it: python.org's 3.14
+without Install Certificates failed with `CERTIFICATE_VERIFY_FAILED`
+([dbt#15809](https://github.com/dbt-labs/dbt/issues/15809)). The wheels
+cover macOS, Linux with glibc 2.28 or later and Windows on x86_64, no
+Alpine ([dbt#15607](https://github.com/dbt-labs/dbt/issues/15607)). An
+install that works the first time outweighs 3.14, which uv replaces by
+a Python it downloads. Revisit when the parser ships wheels on PyPI or
+becomes optional.
+
+`requires-python = ">=3.11,<3.14"` alone does not keep a uv tool off
+3.14: uv 0.8.17 and 0.13.6 ignore the upper bound and installed 0.2.1
+on 3.14, both with `--python 3.14` and on a machine whose only Python
+was 3.14; pip refuses it. So the README passes `--python 3.13`, which
+uv downloads when the machine has none, and every command refuses 3.14
+with the command that reinstalls. Verified on macOS arm64.
+
 ## The word runner (8 October 2026)
 
 *Agent* is taken by the AI that talks to the MCP server. *Runner* over

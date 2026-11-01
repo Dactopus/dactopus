@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,14 @@ def test_unknown_command_is_refused():
     with pytest.raises(SystemExit) as exit_info:
         main(["load"])
     assert exit_info.value.code == 2
+
+
+def test_an_unsupported_python_is_refused_with_the_reinstall_command(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "UNSUPPORTED_PYTHON", sys.version_info[:2])
+    path = tmp_path / "dactopus.yaml"
+    assert main(["init", "--config", str(path)]) == 1
+    assert not path.exists()
+    assert "uv tool install --force --python 3.13 dactopus" in capsys.readouterr().err
 
 
 def test_init_writes_the_sample(tmp_path, capsys):

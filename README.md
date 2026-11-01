@@ -26,15 +26,22 @@ The executor knows nothing of Dactopus.
 
 ## Install
 
-Python 3.11 or later and [uv](https://docs.astral.sh/uv/).
+[uv](https://docs.astral.sh/uv/). The runner runs on Python 3.11 to 3.13;
+`--python 3.13` makes uv use that version, and download it when the
+machine has none.
 
 ```bash
-uv tool install dactopus
+uv tool install --python 3.13 dactopus
 ```
 
 The `dactopus` command gets its own environment with dbt, the dbt
 ClickHouse adapter and the executor. The machine needs no ClickHouse
 binaries; the runner connects to the client's ClickHouse server over HTTP.
+
+`uv tool upgrade dactopus` updates it. An installation of 0.1.0 or
+0.1.1, which came from GitHub, moves to PyPI with
+`uv tool install --force --python 3.13 dactopus`: `uv tool upgrade`
+keeps it on the GitHub tag.
 
 Then, in the folder of the installation:
 
@@ -240,7 +247,7 @@ runner and what each was verified on:
 
 ## Development
 
-Python 3.11 or later and [uv](https://docs.astral.sh/uv/).
+Python 3.11 to 3.13 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync

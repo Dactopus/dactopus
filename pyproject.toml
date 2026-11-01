@@ -1,12 +1,13 @@
 [project]
 name = "dactopus"
-version = "0.2.0"
+version = "0.2.1"
 description = "Runner of Dactopus: loads sources into ClickHouse, builds the canonical tables, runs checks, serves the models over MCP"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Alex Kosachev" }]
-requires-python = ">=3.11"
+# dbt-core 1.11 does not start on 3.14 (docs/design.md, "Python 3.11 to 3.13").
+requires-python = ">=3.11,<3.14"
 keywords = ["clickhouse", "ecommerce", "ga4", "shopify", "mcp"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",

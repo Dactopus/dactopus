@@ -5,7 +5,7 @@ repository is in English: code, comments, commit messages, issues.
 
 ## Setup
 
-Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Python 3.11 to 3.13 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/Dactopus/dactopus
@@ -61,7 +61,7 @@ GitHub release is titled `X.Y.Z`.
 git switch main && git pull --ff-only
 gh workflow run publish.yml --ref main   # step 4, TestPyPI
 uvx pip download --no-deps --index-url https://test.pypi.org/simple/ -d testpypi "dactopus==X.Y.Z.devN"
-uv tool install --force testpypi/dactopus-X.Y.Z.devN-py3-none-any.whl   # dependencies from PyPI
+uv tool install --force --python 3.13 testpypi/dactopus-X.Y.Z.devN-py3-none-any.whl   # dependencies from PyPI
 git tag -a vX.Y.Z -m "dactopus X.Y.Z" && git push origin vX.Y.Z
 gh release create vX.Y.Z --title X.Y.Z --notes-file notes.md   # publishes to PyPI
 ```
