@@ -1,7 +1,7 @@
 # dactopus
 
 [![CI](https://github.com/Dactopus/dactopus/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dactopus/dactopus/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/Dactopus/dactopus)](LICENSE)
+[![License](https://img.shields.io/github/license/Dactopus/dactopus)](https://github.com/Dactopus/dactopus/blob/main/LICENSE)
 
 The runner of Dactopus: the process a client installs next to their
 [ClickHouse](https://clickhouse.com/docs). It loads sources into that
@@ -26,12 +26,10 @@ The executor knows nothing of Dactopus.
 
 ## Install
 
-Python 3.11 or later, [uv](https://docs.astral.sh/uv/) and git. The
-runner is not on PyPI: the executor it depends on is a git dependency,
-which PyPI does not accept.
+Python 3.11 or later and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv tool install git+https://github.com/Dactopus/dactopus@v0.1.1
+uv tool install dactopus
 ```
 
 The `dactopus` command gets its own environment with dbt, the dbt
@@ -237,7 +235,8 @@ It was accepted on the public GA4 sample, on a 2026 GA4 export with
 synthetic e-commerce events and on a development store with a scripted
 history of 440 orders; a store with tens of thousands of orders
 and a server that terminates TLS are untested. The decisions behind the
-runner and what each was verified on: [docs/design.md](docs/design.md).
+runner and what each was verified on:
+[docs/design.md](https://github.com/Dactopus/dactopus/blob/main/docs/design.md).
 
 ## Development
 
@@ -249,8 +248,9 @@ uv run pytest
 uv run ruff check src tests
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+See [CONTRIBUTING.md](https://github.com/Dactopus/dactopus/blob/main/CONTRIBUTING.md)
+and [AGENTS.md](https://github.com/Dactopus/dactopus/blob/main/AGENTS.md).
 
 ## License
 
-[Apache 2.0](LICENSE).
+[Apache 2.0](https://github.com/Dactopus/dactopus/blob/main/LICENSE).

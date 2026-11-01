@@ -7,6 +7,25 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-01
+
+### Added
+
+- On PyPI: `uv tool install dactopus`. A release on GitHub publishes its
+  tag (`.github/workflows/publish.yml`, trusted publishing); run by hand,
+  the workflow uploads a dev version to TestPyPI as a rehearsal. CI builds
+  the package, checks that its README renders as the PyPI page, and runs
+  the wheel outside the checkout. The README's links are absolute, so
+  they work on PyPI.
+
+### Changed
+
+- dactopus-ossie-clickhouse 0.13.0, from PyPI in place of a git
+  reference to 0.12.0. It carries its own copy of apache-ossie, so
+  apache-ossie is no longer installed with the runner. `dactopus serve`
+  gains the questions the executor answers since 0.12.1
+  ([its changelog](https://github.com/Dactopus/dactopus-ossie-clickhouse/blob/main/CHANGELOG.md)).
+
 ## [0.1.1] - 2026-10-30
 
 ### Added
@@ -114,6 +133,7 @@ The first release, a prototype.
   with the version to set. The vars of a package are checked against
   the file before any connection.
 
-[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Dactopus/dactopus/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.1.0
