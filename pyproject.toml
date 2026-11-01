@@ -1,6 +1,6 @@
 [project]
 name = "dactopus"
-version = "0.1.1"
+version = "0.2.0"
 description = "Runner of Dactopus: loads sources into ClickHouse, builds the canonical tables, runs checks, serves the models over MCP"
 readme = "README.md"
 license = "Apache-2.0"
@@ -23,8 +23,8 @@ dependencies = [
     "clickhouse-connect[arrow]>=0.8",
     "dbt-clickhouse~=1.10.0",
     "dbt-core~=1.11.0",
-    # Not on PyPI yet: its own apache-ossie dependency is a git reference.
-    "dactopus-ossie-clickhouse[mcp] @ git+https://github.com/Dactopus/dactopus-ossie-clickhouse@v0.12.0",
+    # While its major version is 0, a minor release may change its Python API.
+    "dactopus-ossie-clickhouse[mcp]~=0.13.0",
     "google-auth>=2.30",
     "google-cloud-bigquery-storage[pyarrow]>=2.27",
     "pyyaml>=6",
@@ -34,6 +34,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/Dactopus/dactopus"
 Issues = "https://github.com/Dactopus/dactopus/issues"
+Changelog = "https://github.com/Dactopus/dactopus/blob/main/CHANGELOG.md"
 
 [project.scripts]
 dactopus = "dactopus.cli:main"
@@ -52,9 +53,6 @@ dev = ["pytest>=8", "ruff>=0.6"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dactopus"]

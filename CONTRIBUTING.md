@@ -45,11 +45,23 @@ GitHub release is titled `X.Y.Z`.
    `## [X.Y.Z] - YYYY-MM-DD`, leaving `[Unreleased]` empty.
 2. Set `version` in `pyproject.toml` and run `uv lock`.
 3. Push, wait for CI, merge with "Rebase and merge".
-4. Tag the commit on `main`, never one on the branch: rebasing changes the
-   hashes.
+4. Rehearse on `main`: run the Publish workflow by hand. It uploads the
+   build to [TestPyPI](https://test.pypi.org/project/dactopus/) as
+   `X.Y.Z.devN`; install that from there, its dependencies from PyPI
+   (anyone may upload to TestPyPI, under any name), and look at the page.
+   PyPI takes each version once, so whatever goes wrong is fixed here,
+   before the tag.
+5. Tag the commit on `main`, never one on the branch: rebasing changes the
+   hashes. Publishing the release on GitHub runs the Publish workflow,
+   which checks that the tag is the version in `pyproject.toml` and
+   uploads to PyPI. The release notes are the changelog section plus the
+   install line pinned to the version.
 
 ```bash
 git switch main && git pull --ff-only
+gh workflow run publish.yml --ref main   # step 4, TestPyPI
+uvx pip download --no-deps --index-url https://test.pypi.org/simple/ -d testpypi "dactopus==X.Y.Z.devN"
+uv tool install --force testpypi/dactopus-X.Y.Z.devN-py3-none-any.whl   # dependencies from PyPI
 git tag -a vX.Y.Z -m "dactopus X.Y.Z" && git push origin vX.Y.Z
-gh release create vX.Y.Z --title X.Y.Z --notes-file notes.md
+gh release create vX.Y.Z --title X.Y.Z --notes-file notes.md   # publishes to PyPI
 ```
