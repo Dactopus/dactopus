@@ -58,7 +58,7 @@ Out of scope, do not build:
   reads several files as one model; the runner only lists them.
 - Migration from a client's dbt or Looker.
 - An installer, a Docker image, a single-file build. Installation is
-  `uv`, as for the executor.
+  `uv tool install` from PyPI.
 - Placeholders or stubs for any of the above.
 
 ## Design principles
@@ -95,7 +95,11 @@ Out of scope, do not build:
 
 ## Stack
 
-Python 3.11+, managed with uv. The parts that constrain code:
+Python 3.11 to 3.13, managed with uv: dbt-core 1.11 does not start on
+3.14, and dbt-core 1.12, which does, cannot be installed without access
+to GitHub ([docs/design.md](docs/design.md)). Every dependency comes from
+PyPI: PyPI refuses a package that depends on a git reference, so one
+breaks the next release. The parts that constrain code:
 
 - **dbt v1**: `dbt-core` 1.11 with `dbt-clickhouse`. Packages are dbt
   projects and also run on dbt v2, but its ClickHouse adapter is in beta

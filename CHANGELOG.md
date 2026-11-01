@@ -7,6 +7,20 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-01
+
+### Fixed
+
+- Python 3.11 to 3.13. On 3.14 the install succeeded and the first
+  `dactopus run` failed inside dbt: dbt-core 1.11 does not start there.
+  The README installs with `uv tool install --python 3.13 dactopus`;
+  every command refuses 3.14 and gives that command with `--force`;
+  `requires-python` is `>=3.11,<3.14`, which pip enforces and uv does
+  not.
+- The README says how to update (`uv tool upgrade dactopus`) and how an
+  installation of 0.1.0 or 0.1.1 from GitHub moves to PyPI
+  (`uv tool install --force --python 3.13 dactopus`).
+
 ## [0.2.0] - 2026-11-01
 
 ### Added
@@ -133,7 +147,8 @@ The first release, a prototype.
   with the version to set. The vars of a package are checked against
   the file before any connection.
 
-[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Dactopus/dactopus/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Dactopus/dactopus/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.1.0

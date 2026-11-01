@@ -167,8 +167,22 @@ _FAILURES = (
 )
 
 
+# The first Python dbt-core 1.11 does not start on. uv ignores the upper bound of
+# requires-python, so a uv tool can land on it; docs/design.md, "Python 3.11 to 3.13".
+UNSUPPORTED_PYTHON = (3, 14)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if sys.version_info[:2] >= UNSUPPORTED_PYTHON:
+        version = ".".join(map(str, sys.version_info[:2]))
+        print(
+            f"dactopus {args.command}: dactopus runs on Python 3.11 to 3.13, not on {version}, "
+            "where dbt does not start. Reinstall it with: "
+            "uv tool install --force --python 3.13 dactopus",
+            file=sys.stderr,
+        )
+        return 1
     try:
         if args.command == "init":
             return _init(args)
