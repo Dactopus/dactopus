@@ -217,7 +217,7 @@ The tools the agent gets and how to check the server without one:
 [MCP setup](https://github.com/Dactopus/dactopus-ossie-clickhouse/blob/main/docs/mcp-setup.md)
 of the executor.
 
-## Scope of 0.1.0
+## Scope
 
 The runner does not:
 
