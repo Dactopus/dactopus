@@ -12,8 +12,9 @@ import json
 import re
 import statistics
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
+from functools import partial
 from importlib.metadata import entry_points
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -22,8 +23,8 @@ from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
 from . import library
-from .build import misdated, target
-from .config import Config
+from .build import dbt_error, misdated, target
+from .config import Config, Source
 
 Severity = Literal["pass", "skip", "warn", "fail", "error"]
 
@@ -45,6 +46,9 @@ class Finding:
     expected: str
     # One sentence a store owner can read.
     sentence: str
+    # The label of the source the finding is about; None for one about the
+    # installation as a whole.
+    source: str | None = None
 
 
 Check = Callable[[Client, Config], list[Finding]]
@@ -108,32 +112,38 @@ _SCHEMA_CHANGE = "The source and target schemas on this incremental model are ou
 
 
 def dbt_results(client: Client, config: Config) -> list[Finding]:
-    """The models, tests and unit tests of the last dbt run of each package."""
+    """The models, tests and unit tests of the last dbt run of each source."""
     findings: list[Finding] = []
-    for package in config.packages():
-        where = target(config, package)
+    for label in config.sources:
+        where = target(config, label)
         try:
             results = json.loads((where / "run_results.json").read_text())
             manifest = json.loads((where / "manifest.json").read_text())
         except FileNotFoundError:
+            error = dbt_error(config, label, "run_results.json")
+            sentence = "The source has not been built yet: run `dactopus run`."
+            if error is not None:
+                step, message = error
+                sentence = f"{step} of the source could not run: {message}"
             findings.append(
                 Finding(
                     check="dbt",
-                    object=package,
+                    object=label,
                     severity="error",
-                    observed="no dbt results",
-                    expected="a dbt run of the package",
-                    sentence=f"The {package} package has not been built yet: run `dactopus run`.",
+                    observed="no dbt results" if error is None else f"{step} could not run",
+                    expected="a dbt run of the source",
+                    sentence=sentence,
+                    source=label,
                 )
             )
             continue
         for result in results["results"]:
             if result["status"] != _NOT_RUN:
-                findings.append(_dbt_finding(result, manifest, package))
+                findings.append(replace(_dbt_finding(result, manifest, label), source=label))
     return findings
 
 
-def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], package: str) -> Finding:
+def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], label: str) -> Finding:
     unique_id = result["unique_id"]
     kind = unique_id.split(".", 1)[0]
     status = result["status"]
@@ -147,7 +157,7 @@ def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], package: str)
             sentence = (
                 f"{table} no longer has the columns its model builds (a release of the "
                 "models library changed them, or the table was changed by hand); run "
-                f"`dactopus run` once with `--full-refresh {package}` to rebuild it "
+                f"`dactopus run` once with `--full-refresh {label}` to rebuild it "
                 "from the input."
             )
         else:
@@ -255,22 +265,27 @@ _FRESHNESS: dict[str, Severity] = {"pass": "pass", "warn": "warn", "error": "err
 
 
 def freshness(client: Client, config: Config) -> list[Finding]:
-    """How old the latest input row of each package is, against the package's thresholds."""
+    """How old the latest input row of each source is, against its package's thresholds."""
     findings: list[Finding] = []
-    for package in config.packages():
-        path = target(config, package) / "sources.json"
+    for label in config.sources:
+        path = target(config, label) / "sources.json"
         try:
             results = json.loads(path.read_text())["results"]
         except FileNotFoundError:
+            error = dbt_error(config, label, "sources.json")
+            sentence = "The freshness of the input is unknown: run `dactopus run`."
+            if error is not None:
+                step, message = error
+                sentence = f"The freshness of the input is unknown: {step} could not run: {message}"
             findings.append(
                 Finding(
                     check="freshness",
-                    object=package,
+                    object=label,
                     severity="error",
-                    observed="no freshness results",
-                    expected="a freshness run of the package",
-                    sentence=f"The freshness of the {package} input is unknown: "
-                    "run `dactopus run`.",
+                    observed="no freshness results" if error is None else f"{step} could not run",
+                    expected="a freshness run of the source",
+                    sentence=sentence,
+                    source=label,
                 )
             )
             continue
@@ -280,20 +295,21 @@ def freshness(client: Client, config: Config) -> list[Finding]:
             findings.append(
                 Finding(
                     check="freshness",
-                    object=package,
+                    object=label,
                     severity="error",
                     observed="no source table",
                     expected="the input table of the package",
-                    sentence=f"The freshness of the {package} input could not be measured: "
-                    "its input table is missing; see the dbt output and run `dactopus run`.",
+                    sentence="The freshness of the input could not be measured: its input "
+                    "table is missing; see the dbt output and run `dactopus run`.",
+                    source=label,
                 )
             )
         for result in results:
-            findings.append(_freshness_finding(package, result))
+            findings.append(replace(_freshness_finding(result), source=label))
     return findings
 
 
-def _freshness_finding(package: str, result: dict[str, Any]) -> Finding:
+def _freshness_finding(result: dict[str, Any]) -> Finding:
     table = result["unique_id"].rsplit(".", 1)[-1]
     status = result["status"]
     severity = _FRESHNESS.get(status, "error")
@@ -310,25 +326,23 @@ def _freshness_finding(package: str, result: dict[str, Any]) -> Finding:
             "error",
             status,
             expected,
-            f"The freshness of {table} ({package}) could not be measured: "
-            f"{result.get('error') or status}",
+            f"The freshness of {table} could not be measured: {result.get('error') or status}",
         )
     latest = datetime.fromisoformat(result["max_loaded_at"])
     age = ago(result["max_loaded_at_time_ago_in_s"])
     observed = f"latest {latest:%Y-%m-%d %H:%M} UTC, {age} ago"
     if severity == "pass":
         sentence = (
-            f"The {package} input is current: the latest row of {table} is {age} old "
-            f"({latest:%Y-%m-%d})."
+            f"The input is current: the latest row of {table} is {age} old ({latest:%Y-%m-%d})."
         )
     elif severity == "warn":
         sentence = (
-            f"No new rows of {table} ({package}) for {age}, the latest from "
+            f"No new rows of {table} for {age}, the latest from "
             f"{latest:%Y-%m-%d}; the package expects them within {warn_after}."
         )
     else:
         sentence = (
-            f"No new rows of {table} ({package}) for {age}, the latest from "
+            f"No new rows of {table} for {age}, the latest from "
             f"{latest:%Y-%m-%d}; the package allows {error_after} at most. "
             "Check that the source still exports and the load runs."
         )
@@ -355,7 +369,7 @@ def ago(seconds: float) -> str:
     return f"{hours / 24:.0f} days"
 
 
-# Rows per day: the tables each package declares as daily in its
+# Rows per day: the tables each source's package declares as daily in its
 # deployment.yml, counted by their date column, over the last 7 days that
 # are over against the 4 weeks before. A day without rows is a finding only
 # in a table the package marks as a gap: a day without events or orders is
@@ -369,7 +383,8 @@ PAST_WEEKS = 4
 class Volume:
     """Rows per day of one table over its last 7 days that are over, with past weeks."""
 
-    package: str
+    # The label of the source.
+    source: str
     table: str
     first: date | None
     # The day the week ends at; None when the table has no day that is over.
@@ -394,36 +409,35 @@ class Volume:
 
 
 def volumes(client: Client, config: Config, at: datetime) -> list[Volume]:
-    """Rows per day of each counted table of the configured packages."""
+    """Rows per day of each counted table of the configured sources."""
     found: list[Volume] = []
-    database = config.clickhouse.database
-    for package in config.packages():
-        declared = _deployment(config, package)
-        last = _last_day(config, declared, at)
+    for label, source in config.sources.items():
+        declared = _deployment(config, source)
+        last = _last_day(source, declared, at)
         for counted in declared.daily:
             table = counted.table
             try:
-                found.append(_volume(client, database, package, table, counted.date, last))
+                found.append(_volume(client, source.database, label, table, counted.date, last))
             except ClickHouseError as exc:
-                found.append(Volume(package, table, None, None, {}, {}, _first_line(exc)))
+                found.append(Volume(label, table, None, None, {}, {}, _first_line(exc)))
     return found
 
 
-def _deployment(config: Config, package: str) -> library.Deployment:
-    return library.deployment(config.models, library.resolve(config.models), package)
+def _deployment(config: Config, source: Source) -> library.Deployment:
+    return library.deployment(config.models, library.resolve(config.models), source.package)
 
 
-def _last_day(config: Config, declared: library.Deployment, at: datetime) -> date | None:
-    """Yesterday in store.timezone; None for a package whose days are all over.
+def _last_day(source: Source, declared: library.Deployment, at: datetime) -> date | None:
+    """Yesterday in the source's zone; None for a source whose days are all over.
 
     A package without a time zone variable has days that end where its
     source says (GA4 is read in daily tables, each a day that is over). A
-    package with one is built in store.timezone, and its day is over at
+    package with one is built in the source's zone, and its day is over at
     midnight there.
     """
     if "time_zone" not in declared.vars:
         return None
-    return at.astimezone(ZoneInfo(config.store.timezone)).date() - timedelta(days=1)
+    return at.astimezone(ZoneInfo(source.timezone)).date() - timedelta(days=1)
 
 
 def _first_line(exc: Exception) -> str:
@@ -431,18 +445,18 @@ def _first_line(exc: Exception) -> str:
 
 
 def _volume(
-    client: Client, database: str, package: str, table: str, column: str, last: date | None
+    client: Client, database: str, label: str, table: str, column: str, last: date | None
 ) -> Volume:
     qualified = f"`{database}`.`{table}`"
     rows, first, latest = client.query(
         f"SELECT count(), min(`{column}`), max(`{column}`) FROM {qualified}"
     ).result_rows[0]
     if not rows:
-        return Volume(package, table, None, None, {}, {})
+        return Volume(label, table, None, None, {}, {})
     end = latest if last is None else last
     if end < first:
         # Rows only for a day that is not over yet.
-        return Volume(package, table, first, None, {}, {})
+        return Volume(label, table, first, None, {}, {})
     span = WEEK * (PAST_WEEKS + 1)
     counted = dict(
         client.query(
@@ -459,22 +473,22 @@ def _volume(
         past = [day - timedelta(weeks=w) for w in range(1, PAST_WEEKS + 1)]
         past = [p for p in past if p >= first]
         typical[day] = int(statistics.median(counted.get(p, 0) for p in past)) if past else None
-    return Volume(package, table, first, end, days, typical)
+    return Volume(label, table, first, end, days, typical)
 
 
 def rows_per_day(client: Client, config: Config) -> list[Finding]:
     """A day without rows in the last 7 days that are over of a table where that is a gap."""
     findings: list[Finding] = []
     at = now()
-    for package in config.packages():
-        declared = _deployment(config, package)
-        last = _last_day(config, declared, at)
+    for label, source in config.sources.items():
+        declared = _deployment(config, source)
+        last = _last_day(source, declared, at)
         for counted in declared.daily:
             if not counted.gap:
                 continue
             table, column = counted.table, counted.date
             try:
-                volume = _volume(client, config.clickhouse.database, package, table, column, last)
+                volume = _volume(client, source.database, label, table, column, last)
             except ClickHouseError as exc:
                 findings.append(
                     Finding(
@@ -483,7 +497,8 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                         "error",
                         _first_line(exc),
                         "rows every day",
-                        f"{table} ({package}) could not be counted; build it with `dactopus run`.",
+                        f"{table} could not be counted; build it with `dactopus run`.",
+                        label,
                     )
                 )
                 continue
@@ -495,7 +510,8 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                         "warn",
                         "no rows",
                         "rows every day",
-                        f"{table} ({package}) has no rows yet.",
+                        f"{table} has no rows yet.",
+                        label,
                     )
                 )
                 continue
@@ -507,8 +523,9 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                         "pass",
                         "rows only for today",
                         "rows every day",
-                        f"{table} ({package}) has rows only for today so far; a day is "
+                        f"{table} has rows only for today so far; a day is "
                         "counted once it is over.",
+                        label,
                     )
                 )
                 continue
@@ -516,7 +533,7 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
             first_day = min(volume.days)
             if gaps:
                 others = [rows for rows in volume.days.values() if rows]
-                sentence = f"{table} ({package}) has no rows for {_days(gaps)}"
+                sentence = f"{table} has no rows for {_days(gaps)}"
                 if others:
                     spread = (
                         f"{min(others):,}"
@@ -532,6 +549,7 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                         f"no rows on {', '.join(day.isoformat() for day in gaps)}",
                         "rows every day",
                         f"{sentence}.",
+                        label,
                     )
                 )
             elif volume.quiet:
@@ -543,8 +561,9 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                         "pass",
                         f"no rows on {', '.join(day.isoformat() for day in quiet)}, as before",
                         "rows every day the same weekday had rows",
-                        f"{table} ({package}) has no rows for {_days(quiet)}, as on the same "
+                        f"{table} has no rows for {_days(quiet)}, as on the same "
                         f"weekday in the {PAST_WEEKS} weeks before.",
+                        label,
                     )
                 )
             else:
@@ -555,8 +574,8 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
                         "pass",
                         f"rows on every day from {first_day} to {volume.latest}",
                         "rows every day",
-                        f"{table} ({package}) has rows on every day from {first_day} "
-                        f"to {volume.latest}.",
+                        f"{table} has rows on every day from {first_day} to {volume.latest}.",
+                        label,
                     )
                 )
     return findings
@@ -569,50 +588,43 @@ def _days(days: list[date]) -> str:
 
 
 # Time zone: the daily tables with a time column, counted for rows whose
-# date is not the day of their time in store.timezone. A package with a
+# date is not the day of their time in the source's zone. A package with a
 # time zone variable is built in that zone, so such a row means tables
 # built in another one. A package without one has the days of its source
-# (GA4: the property's zone), counted over the days rows_per_day reads.
+# (GA4: the property's zone; Sensor.Community: UTC), counted over the days
+# rows_per_day reads: such rows mean the source's days are in another zone
+# than the configuration says.
 
 
 def time_zone(client: Client, config: Config) -> list[Finding]:
-    """Whether the days of each daily table are those of store.timezone."""
+    """Whether the days of each daily table are those of its source's zone."""
     findings: list[Finding] = []
-    zone = config.store.timezone
-    expected = f"every row on its day in {zone}"
-    for package in config.packages():
-        declared = _deployment(config, package)
+    for label, source in config.sources.items():
+        zone = source.timezone
+        expected = f"every row on its day in {zone}"
+        declared = _deployment(config, source)
         built_in_zone = "time_zone" in declared.vars
         for counted in declared.daily:
             if counted.time is None:
                 continue
             table = counted.table
             days = None if built_in_zone else WEEK * (PAST_WEEKS + 1)
+            found = partial(Finding, "time zone", table, expected=expected, source=label)
             try:
-                off = misdated(client, config.clickhouse.database, counted, zone, days)
+                off = misdated(client, source.database, counted, zone, days)
             except ClickHouseError as exc:
                 findings.append(
-                    Finding(
-                        "time zone",
-                        table,
+                    found(
                         "error",
                         _first_line(exc),
-                        expected,
-                        f"The days of {table} ({package}) could not be counted; check that "
-                        "the ClickHouse user can read it and run again.",
+                        sentence=f"The days of {table} could not be counted; check that the "
+                        "ClickHouse user can read it and run again.",
                     )
                 )
                 continue
             if not off.of:
                 findings.append(
-                    Finding(
-                        "time zone",
-                        table,
-                        "skip",
-                        "no rows",
-                        expected,
-                        f"{table} ({package}) has no rows to check the days of.",
-                    )
+                    found("skip", "no rows", sentence=f"{table} has no rows to check the days of.")
                 )
                 continue
             observed = f"{off.rows:,} of {off.of:,} rows on another day"
@@ -620,42 +632,31 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
                 observed += f", from {off.first} to {off.last}"
             if not off.rows:
                 findings.append(
-                    Finding(
-                        "time zone",
-                        table,
-                        "pass",
-                        observed,
-                        expected,
-                        f"Every row of {table} ({package}) is on its day in {zone}.",
+                    found(
+                        "pass", observed, sentence=f"Every row of {table} is on its day in {zone}."
                     )
                 )
             elif built_in_zone:
                 findings.append(
-                    Finding(
-                        "time zone",
-                        table,
+                    found(
                         "fail",
                         observed,
-                        expected,
-                        f"{_n(off.rows, 'row')} of {table} ({package}) "
+                        sentence=f"{_n(off.rows, 'row')} of {table} "
                         f"{_verb(off.rows, 'is', 'are')} on another day than in {zone}: the "
                         "table was built in another time zone. Run `dactopus run "
-                        f"--full-refresh {package}` once to rebuild it.",
+                        f"--full-refresh {label}` once to rebuild it.",
                     )
                 )
             else:
+                setting = f"sources.{label}.timezone" if source.own_timezone else "timezone"
                 findings.append(
-                    Finding(
-                        "time zone",
-                        table,
+                    found(
                         "warn",
                         observed,
-                        expected,
-                        f"{_share(off.rows, off.of)} of the rows of {table} ({package}) from "
-                        f"{off.first} to {off.last} are on another day in {zone}: the source "
-                        'counts its days in another time zone, so "today" in an agent\'s '
-                        "question and days compared with other packages are off by the "
-                        "difference between the zones.",
+                        sentence=f"{_share(off.rows, off.of)} of the rows of {table} from "
+                        f"{off.first} to {off.last} are on another day in {zone} (from "
+                        f"{setting}): the source counts its days in another time zone. Set "
+                        f"sources.{label}.timezone to the zone its days are in.",
                     )
                 )
     return findings

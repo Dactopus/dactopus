@@ -27,8 +27,8 @@ from dactopus.build import Misdated
 # of the built `orders`; its nodes are those of the manifest.
 FIXTURES = Path(__file__).parent / "fixtures" / "dbt" / "shopify"
 
-# The deployment.yml of the GA4 and Shopify packages of dactopus-data-models
-# v0.6.0, and one without vars.input_database.
+# The deployment.yml of the packages and unions of dactopus-data-models
+# v0.9.0, and a package without vars.input_database.
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 # The day after the latest day of _daily(date(2026, 10, 20), ...), at noon.
@@ -40,31 +40,32 @@ def _clock(monkeypatch):
     monkeypatch.setattr(checks, "now", lambda: NOW)
 
 
-def _config(tmp_path, *packages, zone="UTC"):
+def _config(tmp_path, *packages, zone="UTC", own=None):
+    """A source of each package, labelled with its name; ``own`` gives each its own zone."""
     path = tmp_path / "dactopus.yaml"
     known = {
-        "shopify": {"shop": "s"},
-        "ga4": {"project": "p", "dataset": "a.b"},
+        "shopify": {"package": "shopify", "shop": "s"},
+        "ga4": {"package": "ga4", "project": "p", "dataset": "a.b"},
     }
+    sources = {p: dict(known[p]) for p in packages or ("shopify",)}
+    for label, timezone in (own or {}).items():
+        sources[label]["timezone"] = timezone
     path.write_text(
         yaml.safe_dump(
             {
-                "clickhouse": {
-                    "url": "http://db.local:8123",
-                    "input_database": "raw",
-                    "database": "canonical",
-                },
-                "store": {"timezone": zone},
+                "clickhouse": {"url": "http://db.local:8123", "database": "canonical"},
+                "timezone": zone,
                 "models": {"path": str(FIXTURE_LIBRARY)},
-                "packages": {p: known[p] for p in packages or ("shopify",)},
-            }
+                "sources": sources,
+            },
+            sort_keys=False,
         )
     )
     return config.load(path, environ={})
 
 
-def _target(cfg, package="shopify", run_results=None, sources=None):
-    target = cfg.workdir / package / "target"
+def _target(cfg, label="shopify", run_results=None, sources=None):
+    target = cfg.workdir / label / "target"
     target.mkdir(parents=True)
     (target / "manifest.json").write_bytes((FIXTURES / "manifest.json").read_bytes())
     if run_results:
@@ -195,7 +196,7 @@ def test_freshness_within_the_threshold(tmp_path):
     assert finding.observed == "latest 2026-10-21 23:29 UTC, a minute ago"
     assert finding.expected == "within 1 day, 3 days at most"
     assert finding.sentence == (
-        "The shopify input is current: the latest row of orders is a minute old (2026-10-21)."
+        "The input is current: the latest row of orders is a minute old (2026-10-21)."
     )
 
 
@@ -205,7 +206,7 @@ def test_freshness_past_the_error_threshold(tmp_path):
     [finding] = checks.freshness(None, cfg)
     assert finding.severity == "error"
     assert finding.sentence == (
-        "No new rows of orders (shopify) for 18 days, the latest from 2026-10-04; the "
+        "No new rows of orders for 18 days, the latest from 2026-10-04; the "
         "package allows 3 days at most. Check that the source still exports and the load runs."
     )
 
@@ -280,7 +281,7 @@ def test_volumes_give_the_last_week_against_past_weeks(tmp_path):
     latest = date(2026, 10, 20)
     client = _Client(_daily(latest, 60))
     volumes = checks.volumes(client, cfg, NOW)
-    assert [(v.package, v.table) for v in volumes] == [
+    assert [(v.source, v.table) for v in volumes] == [
         ("shopify", "orders"),
         ("shopify", "refunds"),
     ]
@@ -308,7 +309,7 @@ def test_a_day_without_rows_in_the_first_table_warns(tmp_path):
     [finding] = checks.rows_per_day(_Client(_daily(latest, 60, gap=gap)), cfg)
     assert (finding.check, finding.object, finding.severity) == ("rows per day", "orders", "warn")
     assert finding.sentence == (
-        "orders (shopify) has no rows for 2026-10-17; the other days of that week have 10 to 16."
+        "orders has no rows for 2026-10-17; the other days of that week have 10 to 16."
     )
 
 
@@ -316,16 +317,14 @@ def test_rows_every_day_passes(tmp_path):
     cfg = _config(tmp_path)
     [finding] = checks.rows_per_day(_Client(_daily(date(2026, 10, 20), 60)), cfg)
     assert finding.severity == "pass"
-    assert (
-        finding.sentence == "orders (shopify) has rows on every day from 2026-10-14 to 2026-10-20."
-    )
+    assert finding.sentence == "orders has rows on every day from 2026-10-14 to 2026-10-20."
 
 
 def test_an_empty_table_warns(tmp_path):
     cfg = _config(tmp_path)
     [finding] = checks.rows_per_day(_Client({}), cfg)
     assert finding.severity == "warn"
-    assert finding.sentence == "orders (shopify) has no rows yet."
+    assert finding.sentence == "orders has no rows yet."
     [orders, _] = checks.volumes(_Client({}), cfg, NOW)
     assert orders.latest is None and orders.error is None
 
@@ -339,7 +338,7 @@ def test_the_day_not_over_yet_is_left_out(tmp_path):
     assert date(2026, 10, 21) not in orders.days
 
 
-def test_days_are_over_in_the_store_time_zone(tmp_path):
+def test_days_are_over_in_the_installation_time_zone(tmp_path):
     cfg = _config(tmp_path, zone="America/New_York")
     # 02:00 UTC on 21 October is 22:00 on 20 October in New York.
     at = datetime(2026, 10, 21, 2, 0, tzinfo=UTC)
@@ -351,7 +350,7 @@ def test_a_day_without_rows_up_to_yesterday_is_a_gap(tmp_path):
     cfg = _config(tmp_path)
     [finding] = checks.rows_per_day(_Client(_daily(date(2026, 10, 19), 60)), cfg)
     assert finding.severity == "warn"
-    assert finding.sentence.startswith("orders (shopify) has no rows for 2026-10-20; the other")
+    assert finding.sentence.startswith("orders has no rows for 2026-10-20; the other")
 
 
 def test_a_week_without_rows_says_so_without_a_spread(tmp_path):
@@ -359,7 +358,7 @@ def test_a_week_without_rows_says_so_without_a_spread(tmp_path):
     [finding] = checks.rows_per_day(_Client(_daily(date(2026, 10, 1), 30)), cfg)
     assert finding.severity == "warn"
     assert finding.sentence == (
-        "orders (shopify) has no rows for 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17, "
+        "orders has no rows for 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17, "
         "2026-10-18, 2026-10-19 and 2026-10-20."
     )
 
@@ -371,7 +370,7 @@ def test_a_weekday_without_rows_as_usual_is_not_a_gap(tmp_path):
     [finding] = checks.rows_per_day(_Client(counts), cfg)
     assert finding.severity == "pass"
     assert finding.sentence == (
-        "orders (shopify) has no rows for 2026-10-18, as on the same weekday in the 4 weeks before."
+        "orders has no rows for 2026-10-18, as on the same weekday in the 4 weeks before."
     )
 
 
@@ -388,7 +387,7 @@ def test_a_day_without_rows_and_without_history_is_a_gap(tmp_path):
     [finding] = checks.rows_per_day(_Client(counts), cfg)
     assert finding.severity == "warn"
     assert finding.sentence == (
-        "orders (shopify) has no rows for 2026-10-19; the other days of that week have 4 to 5."
+        "orders has no rows for 2026-10-19; the other days of that week have 4 to 5."
     )
 
 
@@ -397,7 +396,7 @@ def test_rows_only_for_today_wait_for_the_day_to_end(tmp_path):
     [finding] = checks.rows_per_day(_Client({date(2026, 10, 21): 3}), cfg)
     assert finding.severity == "pass"
     assert finding.sentence == (
-        "orders (shopify) has rows only for today so far; a day is counted once it is over."
+        "orders has rows only for today so far; a day is counted once it is over."
     )
     [orders, _] = checks.volumes(_Client({date(2026, 10, 21): 3}), cfg, NOW)
     assert (orders.first, orders.latest) == (date(2026, 10, 21), None)
@@ -413,7 +412,7 @@ def _declare(monkeypatch, *daily, time_zone=None):
     if time_zone:
         variables["time_zone"] = time_zone
     declared = library.Deployment("entities/x.yaml", variables, tuple(daily))
-    monkeypatch.setattr(checks, "_deployment", lambda config, package: declared)
+    monkeypatch.setattr(checks, "_deployment", lambda config, source: declared)
 
 
 def test_a_missing_table_is_an_error_not_a_crash(tmp_path, monkeypatch):
@@ -421,9 +420,7 @@ def test_a_missing_table_is_an_error_not_a_crash(tmp_path, monkeypatch):
     _declare(monkeypatch, library.Daily("missing", "order_date", gap=True))
     [finding] = checks.rows_per_day(_Client({}), cfg)
     assert finding.severity == "error"
-    assert (
-        finding.sentence == "missing (shopify) could not be counted; build it with `dactopus run`."
-    )
+    assert finding.sentence == "missing could not be counted; build it with `dactopus run`."
     [volume] = checks.volumes(_Client({}), cfg, NOW)
     assert volume.error.startswith("Code: 60")
 
@@ -450,7 +447,7 @@ def test_a_package_without_a_time_zone_counts_to_its_latest_day(tmp_path, monkey
     assert events.latest == date(2026, 10, 21)
 
 
-def test_a_package_with_a_time_zone_variable_has_the_store_days(tmp_path, monkeypatch):
+def test_a_package_with_a_time_zone_variable_has_the_source_days(tmp_path, monkeypatch):
     cfg = _config(tmp_path, zone="Asia/Tokyo")
     _declare(monkeypatch, library.Daily("orders", "order_date", gap=True), time_zone="store_zone")
     # 20:00 UTC on 21 October is already 22 October in Tokyo.
@@ -508,14 +505,12 @@ def _misdated(monkeypatch, **counts):
     return asked
 
 
-def test_time_zone_passes_for_tables_built_in_the_store_zone(tmp_path, monkeypatch):
+def test_time_zone_passes_for_tables_built_in_the_source_zone(tmp_path, monkeypatch):
     cfg = _config(tmp_path, zone="America/New_York")
     asked = _misdated(monkeypatch, orders=Misdated(0, 16), refunds=Misdated(0, 6))
     findings = checks.time_zone(None, cfg)
     assert [(f.object, f.severity) for f in findings] == [("orders", "pass"), ("refunds", "pass")]
-    assert (
-        findings[0].sentence == "Every row of orders (shopify) is on its day in America/New_York."
-    )
+    assert findings[0].sentence == "Every row of orders is on its day in America/New_York."
     # A package built in the zone is counted whole.
     assert asked == {"orders": ("America/New_York", None), "refunds": ("America/New_York", None)}
 
@@ -526,13 +521,13 @@ def test_time_zone_fails_for_tables_built_in_another_zone(tmp_path, monkeypatch)
     orders, refunds = checks.time_zone(None, cfg)
     assert (orders.severity, orders.observed) == ("fail", "1 of 16 rows on another day")
     assert orders.sentence == (
-        "1 row of orders (shopify) is on another day than in America/New_York: the table was "
+        "1 row of orders is on another day than in America/New_York: the table was "
         "built in another time zone. Run `dactopus run --full-refresh shopify` once to "
         "rebuild it."
     )
     assert (refunds.severity, refunds.sentence) == (
         "skip",
-        "refunds (shopify) has no rows to check the days of.",
+        "refunds has no rows to check the days of.",
     )
 
 
@@ -552,9 +547,10 @@ def test_time_zone_warns_for_a_source_in_another_zone(tmp_path, monkeypatch):
     assert (
         events.observed == "892,970 of 4,295,584 rows on another day, from 2020-12-28 to 2021-01-31"
     )
-    assert events.sentence.startswith(
-        "20.8% of the rows of events (ga4) from 2020-12-28 to 2021-01-31 are on another day in "
-        "America/New_York: the source counts its days in another time zone"
+    assert events.sentence == (
+        "20.8% of the rows of events from 2020-12-28 to 2021-01-31 are on another day in "
+        "America/New_York (from timezone): the source counts its days in another time zone. "
+        "Set sources.ga4.timezone to the zone its days are in."
     )
     assert sessions.severity == "pass"
     assert (purchases.severity, purchases.observed) == ("error", "Code: 497. Not enough privileges")
@@ -571,7 +567,7 @@ def test_a_few_rows_on_another_day_are_not_zero_percent(tmp_path, monkeypatch):
         purchases=Misdated(0, 10, first, last),
     )
     events, _, _ = checks.time_zone(None, cfg)
-    assert events.sentence.startswith("under 0.1% of the rows of events (ga4)")
+    assert events.sentence.startswith("under 0.1% of the rows of events")
 
 
 def test_almost_every_row_on_another_day_is_not_a_hundred_percent(tmp_path, monkeypatch):
@@ -584,8 +580,8 @@ def test_almost_every_row_on_another_day_is_not_a_hundred_percent(tmp_path, monk
         purchases=Misdated(0, 10, first, last),
     )
     events, sessions, _ = checks.time_zone(None, cfg)
-    assert events.sentence.startswith("over 99.9% of the rows of events (ga4)")
-    assert sessions.sentence.startswith("100.0% of the rows of sessions (ga4)")
+    assert events.sentence.startswith("over 99.9% of the rows of events")
+    assert sessions.sentence.startswith("100.0% of the rows of sessions")
 
 
 def test_time_zone_leaves_out_tables_without_a_time_column(tmp_path, monkeypatch):
@@ -593,3 +589,71 @@ def test_time_zone_leaves_out_tables_without_a_time_column(tmp_path, monkeypatch
     _declare(monkeypatch, library.Daily("orders", "order_date", gap=True), time_zone="z")
     _misdated(monkeypatch)
     assert checks.time_zone(None, cfg) == []
+
+
+def test_every_finding_of_a_source_carries_its_label(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, "ga4", "shopify")
+    _target(cfg, run_results="run_results_build_pass.json", sources="sources_pass.json")
+    _misdated(
+        monkeypatch,
+        orders=Misdated(0, 1),
+        refunds=Misdated(0, 1),
+        events=Misdated(0, 1),
+        sessions=Misdated(0, 1),
+        purchases=Misdated(0, 1),
+    )
+    client = _Client(_daily(date(2026, 10, 20), 60))
+    for check in (checks.dbt_results, checks.freshness, checks.rows_per_day, checks.time_zone):
+        found = check(client, cfg)
+        assert {f.source for f in found} == {"ga4", "shopify"}, check.__name__
+
+
+def test_each_source_is_counted_in_its_own_database_and_zone(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, "ga4", "shopify", zone="America/New_York", own={"ga4": "Asia/Tokyo"})
+    asked = []
+
+    def fake(client, database, counted, zone, days=None):
+        asked.append((database, counted.table, zone))
+        return Misdated(0, 1)
+
+    monkeypatch.setattr(checks, "misdated", fake)
+    checks.time_zone(None, cfg)
+    assert asked == [
+        ("canonical_ga4", "events", "Asia/Tokyo"),
+        ("canonical_ga4", "sessions", "Asia/Tokyo"),
+        ("canonical_ga4", "purchases", "Asia/Tokyo"),
+        ("canonical_shopify", "orders", "America/New_York"),
+        ("canonical_shopify", "refunds", "America/New_York"),
+    ]
+
+
+def test_a_source_in_its_own_zone_is_named_by_its_setting(tmp_path, monkeypatch):
+    """Sensor.Community: days in UTC, in an installation in New York."""
+    cfg = _config(tmp_path, "ga4", zone="America/New_York", own={"ga4": "UTC"})
+    first, last = date(2026, 9, 15), date(2026, 10, 20)
+    _misdated(
+        monkeypatch,
+        events=Misdated(5, 10, first, last),
+        sessions=Misdated(0, 10, first, last),
+        purchases=Misdated(0, 10, first, last),
+    )
+    events, sessions, _ = checks.time_zone(None, cfg)
+    assert "on another day in UTC (from sources.ga4.timezone)" in events.sentence
+    assert sessions.sentence == "Every row of sessions is on its day in UTC."
+
+
+def test_a_source_dbt_could_not_build_shows_the_package_s_message(tmp_path):
+    cfg = _config(tmp_path, "ga4", "shopify")
+    _target(cfg, run_results="run_results_build_pass.json", sources="sources_pass.json")
+    (cfg.workdir / "ga4").mkdir()
+    message = "Compilation Error in model events (models/events.sql) Set ga4_x."
+    (cfg.workdir / "ga4" / "run_results.error").write_text(f"dbt build\n{message}\n")
+    (cfg.workdir / "ga4" / "sources.error").write_text(f"dbt source freshness\n{message}\n")
+    [built] = [f for f in checks.dbt_results(None, cfg) if f.severity == "error"]
+    assert (built.source, built.object, built.observed) == ("ga4", "ga4", "dbt build could not run")
+    assert built.sentence == f"dbt build of the source could not run: {message}"
+    [fresh] = [f for f in checks.freshness(None, cfg) if f.source == "ga4"]
+    assert fresh.severity == "error"
+    assert fresh.sentence == (
+        f"The freshness of the input is unknown: dbt source freshness could not run: {message}"
+    )

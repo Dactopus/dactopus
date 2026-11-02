@@ -10,15 +10,13 @@ from .config import Config
 
 FILE = "report.md"
 
-_NAMES = {"ga4": "GA4", "shopify": "Shopify"}
-
 
 def render(config: Config, findings: list[Finding], volumes: list[Volume], now: datetime) -> str:
     lines = ["# Dactopus report", "", f"{now:%Y-%m-%d %H:%M} UTC, {config.path}", ""]
     lines += _freshness(findings)
     lines += _checks(findings)
-    lines += _volumes(volumes)
-    lines += _details(findings)
+    lines += _volumes(config, volumes)
+    lines += _details(config, findings)
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -35,7 +33,7 @@ def _freshness(findings: list[Finding]) -> list[str]:
     if not fresh:
         lines.append("Unknown: no freshness results.")
     for finding in fresh:
-        lines.append(f"- {_mark(finding.severity)}{finding.sentence}")
+        lines.append(f"- {_mark(finding.severity)}{_label(finding)}{finding.sentence}")
     return [*lines, ""]
 
 
@@ -61,18 +59,26 @@ def _checks(findings: list[Finding]) -> list[str]:
         lines.append(f"No: of {total} checks, {', '.join(parts)}.")
         lines.append("")
         for finding in sorted(bad, key=lambda f: -SEVERITIES.index(f.severity)):
-            lines.append(f"- {_mark(finding.severity)}{finding.sentence}")
+            lines.append(f"- {_mark(finding.severity)}{_label(finding)}{finding.sentence}")
     return [*lines, ""]
 
 
-def _volumes(volumes: list[Volume]) -> list[str]:
+def _volumes(config: Config, volumes: list[Volume]) -> list[str]:
     lines = ["## Rows per day", ""]
     if not volumes:
         lines.append("No tables to count.")
-    for package in dict.fromkeys(v.package for v in volumes):
-        own = [v for v in volumes if v.package == package]
-        lines.append(f"### {_NAMES.get(package, package)}")
+    for label in dict.fromkeys(v.source for v in volumes):
+        own = [v for v in volumes if v.source == label]
+        lines.append(f"### {label}")
         lines.append("")
+        source = config.sources.get(label)
+        if source is not None and source.timezone != config.timezone:
+            # One "today" for every source: the executor takes one zone.
+            lines.append(
+                f'Its days are in {source.timezone}; "today" in an agent\'s question is '
+                f"the date in {config.timezone}."
+            )
+            lines.append("")
         with_rows = [v for v in own if v.latest is not None]
         for empty in (v for v in own if v.latest is None):
             if empty.error:
@@ -109,21 +115,35 @@ def _cell(volume: Volume, day: date) -> str:
     return rows if typical is None else f"{rows} ({typical:,})"
 
 
-def _details(findings: list[Finding]) -> list[str]:
+def _details(config: Config, findings: list[Finding]) -> list[str]:
+    """The findings by source, in the order of the configuration, then the others."""
     lines = ["## Details", ""]
     if not findings:
         lines.append("No checks ran.")
-    for check in dict.fromkeys(f.check for f in findings):
-        lines.append(f"### {check}")
+    order = list(config.sources)
+    groups = sorted(
+        dict.fromkeys(f.source for f in findings),
+        key=lambda s: order.index(s) if s in order else len(order),
+    )
+    for group in groups:
+        own = [f for f in findings if f.source == group]
+        lines.append(f"### {group or 'The installation'}")
         lines.append("")
-        for finding in (f for f in findings if f.check == check):
-            line = f"- {finding.severity}: {finding.object}: {finding.sentence}"
-            if finding.severity != "pass":
-                line += f" (observed {finding.observed}; expected {finding.expected})"
-            lines.append(line)
-        lines.append("")
+        for check in dict.fromkeys(f.check for f in own):
+            lines.append(f"#### {check}")
+            lines.append("")
+            for finding in (f for f in own if f.check == check):
+                line = f"- {finding.severity}: {finding.object}: {finding.sentence}"
+                if finding.severity != "pass":
+                    line += f" (observed {finding.observed}; expected {finding.expected})"
+                lines.append(line)
+            lines.append("")
     return lines
 
 
 def _mark(severity: str) -> str:
     return "" if severity == "pass" else f"{severity}: "
+
+
+def _label(finding: Finding) -> str:
+    return "" if finding.source is None else f"{finding.source}: "

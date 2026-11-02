@@ -1,4 +1,4 @@
-"""Serving the models of the configured packages over MCP, by the executor."""
+"""Serving the models of the configured sources over MCP, by the executor."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ class ServeError(Exception):
 
 
 def model_files(cfg: Config, library: Path) -> list[Path]:
-    """The model files the configured packages declare, each once."""
+    """The model files the packages of the configured sources declare, each once."""
     files: list[Path] = []
-    for package in cfg.packages():
-        model = deployment(cfg.models, library, package).model
+    for source in cfg.sources.values():
+        model = deployment(cfg.models, library, source.package).model
         path = library / model
         if not path.is_file():
             raise ServeError(
-                f"{package}: the models library has no {model}; "
+                f"{source.package}: the models library has no {model}; "
                 "check models.version or models.path."
             )
         if path not in files:
@@ -30,7 +30,7 @@ def model_files(cfg: Config, library: Path) -> list[Path]:
 
 
 def url(cfg: Config) -> str:
-    """The executor's ClickHouse URL: the canonical database is its path.
+    """The executor's ClickHouse URL: clickhouse.database, the unions', is its path.
 
     The models name their tables without a database; the executor reads
     them in the database of the URL, over TLS for https, as the serve user
@@ -51,9 +51,9 @@ def serve(cfg: Config, library: Path) -> int:
 
     The URL holds the password, so it goes to the executor in-process,
     never in a command line other processes can read. "Today" in a
-    question is the date in store.timezone.
+    question is the date in the installation's time zone.
     """
     from dactopus_ossie_clickhouse import cli as executor
 
     files = [str(path) for path in model_files(cfg, library)]
-    return executor.main(["serve", *files, "--url", url(cfg), "--time-zone", cfg.store.timezone])
+    return executor.main(["serve", *files, "--url", url(cfg), "--time-zone", cfg.timezone])

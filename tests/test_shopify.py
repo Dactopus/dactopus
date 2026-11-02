@@ -71,7 +71,7 @@ def _table(client, database, name):
 def test_orders_are_loaded_page_by_page(shopify_input):
     client, database = shopify_input
     api = FakeAPI(ALL)
-    counts = shopify.load(client, api, database)
+    counts = shopify.load(client, api, database, "shopify")
     assert counts == {
         "orders": 7,
         "order_lines": 10,
@@ -105,7 +105,7 @@ def test_orders_are_loaded_page_by_page(shopify_input):
 
 def test_next_load_starts_an_hour_before_the_latest_change(shopify_input):
     client, database = shopify_input
-    shopify.load(client, FakeAPI(ALL), database)
+    shopify.load(client, FakeAPI(ALL), database, "shopify")
     changed = {
         "orders": PAGES[1:],
         "products": [
@@ -114,7 +114,7 @@ def test_next_load_starts_an_hour_before_the_latest_change(shopify_input):
         "events": CATALOG["events"],
     }
     api = FakeAPI(changed)
-    shopify.load(client, api, database)
+    shopify.load(client, api, database, "shopify")
     # The orders from an hour before the latest order's change; the products
     # and the deletions from an hour before the latest product's change,
     # which here is later than the deletion.
@@ -141,7 +141,7 @@ def test_a_library_without_products_is_refused_before_loading(shopify_input):
     client.command(f"DROP TABLE `{database}`.products")
     api = FakeAPI(ALL)
     with pytest.raises(shopify.LoadError) as refused:
-        shopify.load(client, api, database)
+        shopify.load(client, api, database, "shopify")
     assert str(refused.value) == (
         "shopify: the input of the models library has no products table; set models.version, "
         "or the checkout at models.path, to v0.7.2 or later; nothing has been loaded yet."
@@ -156,7 +156,7 @@ def test_refunds_without_processed_at_are_refused_before_loading(shopify_input):
     client.command(f"ALTER TABLE `{database}`.refunds DROP COLUMN processed_at")
     api = FakeAPI(ALL)
     with pytest.raises(shopify.LoadError) as refused:
-        shopify.load(client, api, database)
+        shopify.load(client, api, database, "shopify")
     assert str(refused.value) == (
         f"shopify: the input table {database}.refunds has no processed_at column, the date of "
         "a refund since models library v0.7.2. With an older library, set models.version, or "
@@ -172,7 +172,10 @@ def test_refunds_without_processed_at_are_refused_before_loading(shopify_input):
 def test_a_refund_keeps_the_date_it_was_processed(shopify_input):
     client, database = shopify_input
     shopify.load(
-        client, FakeAPI({"orders": IMPORTED, "products": NOTHING, "events": NOTHING}), database
+        client,
+        FakeAPI({"orders": IMPORTED, "products": NOTHING, "events": NOTHING}),
+        database,
+        "shopify",
     )
     refunds = client.query(
         f"SELECT id, created_at, processed_at FROM `{database}`.refunds"
@@ -192,7 +195,7 @@ def _recipe_script(library: Path) -> str:
 def test_rows_equal_the_readme_recipe(shopify_input, models_library, tmp_path, monkeypatch):
     """The runner loads what export_shopify.py and its load step load."""
     client, database = shopify_input
-    shopify.load(client, FakeAPI(ALL), database)
+    shopify.load(client, FakeAPI(ALL), database, "shopify")
 
     # The recipe reads the orders, then the products, then the deletions.
     pages = iter(
@@ -263,8 +266,10 @@ def test_a_refused_products_query_names_the_scope(monkeypatch):
 
 
 def test_missing_app_secret_is_named():
-    package = Shopify(shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET", vars={})
-    with pytest.raises(shopify.LoadError, match="SECRET is not set"):
+    package = Shopify(
+        label="shop", shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET"
+    )
+    with pytest.raises(shopify.LoadError, match="SECRET of sources.shop is not set"):
         shopify.access_token(package, environ={"ID": "x"})
 
 
@@ -284,13 +289,19 @@ def test_unreachable_store_says_run_again(monkeypatch):
 # than 2026-10; the runner's own 2026-10 request read the same zone that day.
 SHOP_ZONE = {"data": {"shop": {"ianaTimezone": "America/New_York"}}}
 
+SHOP = Shopify(label="shop", shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET")
+
+
+def _check_zone(zone, setting="timezone"):
+    shopify.check_time_zone(SHOP, "token", zone, setting)
+
 
 def test_the_shop_time_zone_passes(monkeypatch):
     sent = []
     monkeypatch.setattr(
         shopify, "_post", lambda url, data, headers: sent.append(json.loads(data)) or SHOP_ZONE
     )
-    shopify.check_time_zone("dactopus-dev", "token", "America/New_York")
+    _check_zone("America/New_York")
     assert sent == [{"query": shopify.ZONE_QUERY, "variables": {}}]
 
 
@@ -298,23 +309,24 @@ def test_the_shop_time_zone_passes(monkeypatch):
 def test_another_name_of_the_shop_time_zone_passes(monkeypatch, shop, store):
     answer = {"data": {"shop": {"ianaTimezone": shop}}}
     monkeypatch.setattr(shopify, "_post", lambda url, data, headers: answer)
-    shopify.check_time_zone("dactopus-dev", "token", store)
+    _check_zone(store)
 
 
 def test_the_shop_time_zone_is_known_without_the_machine_database(monkeypatch, no_system_zones):
     answer = {"data": {"shop": {"ianaTimezone": "Europe/Kiev"}}}
     monkeypatch.setattr(shopify, "_post", lambda url, data, headers: answer)
-    shopify.check_time_zone("dactopus-dev", "token", "Europe/Kyiv")
+    _check_zone("Europe/Kyiv")
 
 
 def test_another_time_zone_than_the_shop_is_refused(monkeypatch):
     monkeypatch.setattr(shopify, "_post", lambda url, data, headers: SHOP_ZONE)
     with pytest.raises(shopify.LoadError) as refused:
-        shopify.check_time_zone("dactopus-dev", "token", "Europe/Berlin")
+        _check_zone("Europe/Berlin", "sources.shop.timezone")
     assert str(refused.value) == (
-        "shopify: the time zone of dactopus-dev.myshopify.com is America/New_York, and "
-        "store.timezone is Europe/Berlin; set store.timezone to America/New_York, the shop's "
-        "(Settings > General in the Shopify admin)."
+        "shop: the time zone of dactopus-dev.myshopify.com is America/New_York, and the "
+        "source's is Europe/Berlin (from sources.shop.timezone); set sources.shop.timezone to "
+        "America/New_York, the shop's (Settings > General in the Shopify admin). Nothing has "
+        "been loaded yet."
     )
 
 
@@ -324,7 +336,7 @@ def test_a_refused_time_zone_query_says_nothing_was_loaded(monkeypatch):
 
     monkeypatch.setattr(shopify, "_post", refuse)
     with pytest.raises(shopify.LoadError) as refused:
-        shopify.check_time_zone("dactopus-dev", "token", "America/New_York")
+        _check_zone("America/New_York")
     assert str(refused.value) == (
         "shopify: the Admin API of dactopus-dev.myshopify.com answered 403; check that the app "
         "is installed on the store and run again; nothing has been loaded yet."

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -14,9 +14,9 @@ from . import build, checks, clickhouse, config, ga4, library, report, serve, sh
 
 COMMANDS = {
     "init": "write a commented sample configuration",
-    "run": "load the sources, build the packages, run the checks, write the report",
+    "run": "load the sources, build them, run the checks, write the report",
     "check": "run the checks and write the report, without loading or building",
-    "serve": "serve the models of the configured packages over MCP",
+    "serve": "serve the models of the configured sources over MCP",
 }
 
 
@@ -35,18 +35,18 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument(
                 "--full-refresh",
                 nargs="*",
-                metavar="PACKAGE",
-                help="rebuild the canonical tables of the named packages (all configured "
-                "packages when none is named) from the input, with dbt build --full-refresh",
+                metavar="LABEL",
+                help="rebuild the canonical tables of the sources with these labels (every "
+                "source when none is named) from the input, with dbt build --full-refresh",
             )
     return parser
 
 
 def full_refresh(names: list[str] | None, cfg: config.Config) -> set[str]:
-    """The packages `--full-refresh` rebuilds: none without the flag, all without names."""
+    """The sources `--full-refresh` rebuilds: none without the flag, all without labels."""
     if names is None:
         return set()
-    configured = list(cfg.packages())
+    configured = list(cfg.sources)
     unknown = sorted(set(names) - set(configured))
     if unknown:
         raise config.ConfigError(
@@ -88,9 +88,9 @@ def _connect(cfg: config.Config) -> clickhouse.Client:
 
 
 def _library(cfg: config.Config) -> Path:
-    """The library root, with the configured vars checked against its packages."""
+    """The library root, checked against the configured sources."""
     root = library.resolve(cfg.models)
-    library.check_vars(cfg, root)
+    library.check(cfg, root)
     return root
 
 
@@ -100,30 +100,38 @@ def _run(args: argparse.Namespace) -> int:
     root = _library(cfg)
     # Refused before anything is written: a zone other than the shop's, or
     # canonical tables built in another zone.
-    if cfg.shopify is not None:
-        token = shopify.access_token(cfg.shopify)
-        shopify.check_time_zone(cfg.shopify.shop, token, cfg.store.timezone)
+    tokens: dict[str, str] = {}
+    for label, source in cfg.sources.items():
+        if isinstance(source.loader, config.Shopify):
+            tokens[label] = shopify.access_token(source.loader)
+            setting = f"sources.{label}.timezone" if source.own_timezone else "timezone"
+            shopify.check_time_zone(source.loader, tokens[label], source.timezone, setting)
     client = _connect(cfg)
-    canonical = cfg.clickhouse.database
     with _step(
-        f"build: counting the days of the tables in {canonical}",
-        f"check that the ClickHouse user can read {canonical} and run again; nothing has "
-        "been loaded yet.",
+        "build: counting the days of the sources' tables",
+        "check that the ClickHouse user can read the databases of the sources and run "
+        "again; nothing has been loaded yet.",
     ):
         build.check_zone(client, cfg, root, refresh)
-    database = cfg.clickhouse.input_database
-    for package in cfg.packages():
-        with _step(f"{package}: creating the input tables in {database}", _AGAIN):
-            clickhouse.create_input(client, root, package, database)
-    if cfg.ga4 is not None:
-        export = ga4.BigQueryExport(cfg.ga4)
-        with _step(f"ga4: loading into {database}.{ga4.TABLE}", _AGAIN):
-            ga4.load(client, export, database, ga4.lookback_days(cfg.ga4, root))
-    if cfg.shopify is not None:
-        with _step(f"shopify: loading orders and products into {database}", _AGAIN):
-            shopify.load(client, shopify.graphql(cfg.shopify.shop, token), database)
-    for package in cfg.packages():
-        build.build(cfg, root, package, full_refresh=package in refresh)
+    # A source without a loader has its input written by the client's
+    # transport or by the client; the runner leaves that database alone.
+    for label, source in cfg.sources.items():
+        loader, database = source.loader, source.input_database
+        if loader is None:
+            continue
+        with _step(f"{label}: creating the input tables in {database}", _AGAIN):
+            clickhouse.create_input(client, root, source.package, database)
+        if isinstance(loader, config.GA4):
+            export = ga4.BigQueryExport(loader)
+            lookback = ga4.lookback_days(label, source.vars, root)
+            with _step(f"{label}: loading into {database}.{ga4.TABLE}", _AGAIN):
+                ga4.load(client, export, database, lookback)
+        else:
+            fetch = shopify.graphql(loader.shop, tokens[label])
+            with _step(f"{label}: loading orders and products into {database}", _AGAIN):
+                shopify.load(client, fetch, database, label)
+    for label in cfg.sources:
+        _each(build.build, cfg, root, label, full_refresh=label in refresh)
     return _report(cfg, root, client)
 
 
@@ -131,8 +139,8 @@ def _check(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
     root = _library(cfg)
     client = _connect(cfg)
-    for package in cfg.packages():
-        build.test(cfg, root, package)
+    for label in cfg.sources:
+        _each(build.test, cfg, root, label)
     return _report(cfg, root, client)
 
 
@@ -142,10 +150,22 @@ def _serve(args: argparse.Namespace) -> int:
     return serve.serve(cfg, _library(cfg))
 
 
+def _each(step: Callable[..., None], cfg: config.Config, root: Path, label: str, **kw) -> None:
+    """A dbt step of one source; when dbt cannot run, the others go on.
+
+    The step leaves dbt's error for the checks, so the report shows it and
+    the run exits with 1.
+    """
+    try:
+        step(cfg, root, label, **kw)
+    except build.BuildError as exc:
+        print(f"dactopus: {exc}", file=sys.stderr)
+
+
 def _report(cfg: config.Config, root: Path, client: clickhouse.Client) -> int:
     """Measure freshness, run the checks, write the report; 1 on a fail or an error."""
-    for package in cfg.packages():
-        build.freshness(cfg, root, package)
+    for label in cfg.sources:
+        _each(build.freshness, cfg, root, label)
     findings = checks.run_all(client, cfg)
     at = checks.now()
     volumes = checks.volumes(client, cfg, at)

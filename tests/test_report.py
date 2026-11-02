@@ -8,29 +8,27 @@ from dactopus.checks import Finding, Volume
 NOW = datetime(2026, 10, 22, 7, 30, tzinfo=UTC)
 
 
-def _config(tmp_path):
+def _config(tmp_path, **sources):
+    """A Shopify store shop_us, then the sources given."""
     path = tmp_path / "dactopus.yaml"
     path.write_text(
         yaml.safe_dump(
             {
-                "clickhouse": {
-                    "url": "http://db.local:8123",
-                    "input_database": "raw",
-                    "database": "canonical",
-                },
-                "store": {"timezone": "UTC"},
+                "clickhouse": {"url": "http://db.local:8123", "database": "canonical"},
+                "timezone": "UTC",
                 "models": {"version": "v0.9.0"},
-                "packages": {"shopify": {"shop": "s"}},
-            }
+                "sources": {"shop_us": {"package": "shopify", "shop": "s"}, **sources},
+            },
+            sort_keys=False,
         )
     )
     return config.load(path, environ={})
 
 
-def _volume(package, table, latest, rows, typical=None, error=None):
+def _volume(label, table, latest, rows, typical=None, error=None):
     days = {latest - timedelta(days=i): rows for i in range(6, -1, -1)}
     return Volume(
-        package,
+        label,
         table,
         latest - timedelta(days=40),
         latest,
@@ -41,10 +39,20 @@ def _volume(package, table, latest, rows, typical=None, error=None):
 
 
 FRESH = Finding(
-    "freshness", "orders", "pass", "latest", "within 1 day", "The shopify input is current."
+    "freshness", "orders", "pass", "latest", "within 1 day", "The input is current.", "shop_us"
 )
-OK = Finding("dbt", "orders.order_id", "pass", "0 rows", "0 rows", "No order_id repeats in orders.")
-FAIL = Finding("dbt", "orders.order_id", "fail", "2 rows", "0 rows", "2 values of order_id repeat.")
+OK = Finding(
+    "dbt",
+    "orders.order_id",
+    "pass",
+    "0 rows",
+    "0 rows",
+    "No order_id repeats in orders.",
+    "shop_us",
+)
+FAIL = Finding(
+    "dbt", "orders.order_id", "fail", "2 rows", "0 rows", "2 values of order_id repeat.", "shop_us"
+)
 WARN = Finding(
     "rows per day",
     "orders",
@@ -52,6 +60,7 @@ WARN = Finding(
     "no rows on 2026-10-20",
     "rows every day",
     "No orders on 2026-10-20.",
+    "shop_us",
 )
 SKIP = Finding(
     "dbt",
@@ -60,13 +69,14 @@ SKIP = Finding(
     "skipped",
     "built",
     "refunds was not built because an earlier step failed.",
+    "shop_us",
 )
 
 
 def test_three_answers_come_first_when_all_is_well(tmp_path):
     cfg = _config(tmp_path)
     latest = date(2026, 10, 21)
-    text = report.render(cfg, [FRESH, OK], [_volume("shopify", "orders", latest, 12, 10)], NOW)
+    text = report.render(cfg, [FRESH, OK], [_volume("shop_us", "orders", latest, 12, 10)], NOW)
     lines = text.splitlines()
     assert lines[0] == "# Dactopus report"
     assert lines[2] == f"2026-10-22 07:30 UTC, {cfg.path}"
@@ -76,9 +86,9 @@ def test_three_answers_come_first_when_all_is_well(tmp_path):
         "## Rows per day",
         "## Details",
     ]
-    assert "- The shopify input is current." in lines
+    assert "- shop_us: The input is current." in lines
     assert "Yes: all 2 checks passed." in lines
-    assert "### Shopify" in lines
+    assert "### shop_us" in lines
     assert "| Day | orders |" in lines
     assert "| 2026-10-21 Wed | 12 (10) |" in lines
     assert "- pass: orders.order_id: No order_id repeats in orders." in lines
@@ -97,8 +107,8 @@ def test_what_did_not_pass_is_listed_worst_first(tmp_path):
         "No: of 5 checks, 1 failed, 1 warned, 1 did not run because an earlier step failed."
     )
     assert lines[i + 2 : i + 4] == [
-        "- fail: 2 values of order_id repeat.",
-        "- warn: No orders on 2026-10-20.",
+        "- fail: shop_us: 2 values of order_id repeat.",
+        "- warn: shop_us: No orders on 2026-10-20.",
     ]
     assert "No tables to count." in lines
     assert (
@@ -111,10 +121,10 @@ def test_tables_without_rows_or_missing_are_said_so(tmp_path):
     cfg = _config(tmp_path)
     latest = date(2026, 10, 21)
     volumes = [
-        _volume("shopify", "orders", latest, 3),
-        Volume("shopify", "refunds", None, None, {}, {}),
-        Volume("shopify", "sales", latest, None, {}, {}),
-        Volume("ga4", "events", None, None, {}, {}, "Code: 60. Unknown table"),
+        _volume("shop_us", "orders", latest, 3),
+        Volume("shop_us", "refunds", None, None, {}, {}),
+        Volume("shop_us", "sales", latest, None, {}, {}),
+        Volume("web", "events", None, None, {}, {}, "Code: 60. Unknown table"),
     ]
     text = report.render(cfg, [], volumes, NOW)
     assert "refunds has no rows." in text
@@ -129,3 +139,43 @@ def test_the_report_is_written_next_to_dbt_output(tmp_path):
     path = report.write(cfg, "# Dactopus report\n")
     assert path == cfg.workdir / "report.md"
     assert path.read_text() == "# Dactopus report\n"
+
+
+def test_findings_and_volumes_are_grouped_by_source(tmp_path):
+    """In the order of the configuration, the findings of no source last."""
+    cfg = _config(tmp_path, web={"package": "ga4", "project": "p", "dataset": "a.b"})
+    latest = date(2026, 10, 21)
+    plugin = Finding("mine", "installation", "pass", "1", "1", "Fine.")
+    web = Finding("freshness", "events", "pass", "latest", "within 2 days", "Current.", "web")
+    volumes = [_volume("shop_us", "orders", latest, 3), _volume("web", "events", latest, 9)]
+    lines = report.render(cfg, [plugin, web, FRESH, OK], volumes, NOW).splitlines()
+    details = lines[lines.index("## Details") :]
+    assert [line for line in details if line.startswith("### ")] == [
+        "### shop_us",
+        "### web",
+        "### The installation",
+    ]
+    shop = details.index("### shop_us")
+    assert details[shop + 2 : shop + 5] == [
+        "#### freshness",
+        "",
+        "- pass: orders: The input is current.",
+    ]
+    assert "- web: Current." in lines
+    rows = lines[lines.index("## Rows per day") : lines.index("## Details")]
+    assert [line for line in rows if line.startswith("### ")] == ["### shop_us", "### web"]
+
+
+def test_a_source_in_another_zone_than_the_installation_says_so(tmp_path):
+    cfg = _config(
+        tmp_path,
+        woo_eu={"package": "woocommerce", "timezone": "Europe/Berlin"},
+    )
+    latest = date(2026, 10, 21)
+    volumes = [_volume("shop_us", "orders", latest, 3), _volume("woo_eu", "orders", latest, 4)]
+    lines = report.render(cfg, [], volumes, NOW).splitlines()
+    at = lines.index("### woo_eu")
+    assert lines[at + 2] == (
+        'Its days are in Europe/Berlin; "today" in an agent\'s question is the date in UTC.'
+    )
+    assert lines[lines.index("### shop_us") + 2].startswith("The last 7 days")

@@ -1,12 +1,14 @@
-"""Building the canonical tables: dbt build of each package."""
+"""Building the canonical tables: dbt build of each source's package."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+from collections import deque
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -19,7 +21,7 @@ from .library import Daily, deployment
 
 
 class BuildError(Exception):
-    """dbt could not build a package."""
+    """dbt could not build a source."""
 
 
 def _dbt() -> str:
@@ -33,8 +35,8 @@ def _dbt() -> str:
     return found
 
 
-def write_profile(config: Config, project: Path) -> Path:
-    """Write the dbt profile the package names, in the workdir; return its directory.
+def write_profile(config: Config, project: Path, database: str, directory: Path) -> Path:
+    """Write the dbt profile the project names, writing to database; return its directory.
 
     The password stays out of the file: dbt reads it from the environment.
     """
@@ -52,34 +54,41 @@ def write_profile(config: Config, project: Path) -> Path:
                     "user": ch.user,
                     # dbt scrubs DBT_ENV_SECRET_ values from its logs.
                     "password": "{{ env_var('DBT_ENV_SECRET_CLICKHOUSE_PASSWORD', '') }}",
-                    # The database the canonical tables are written to.
-                    "schema": ch.database,
+                    # The database the project's tables are written to.
+                    "schema": database,
                 }
             },
         }
     }
-    config.workdir.mkdir(exist_ok=True)
-    (config.workdir / "profiles.yml").write_text(yaml.safe_dump(profile, sort_keys=False))
-    return config.workdir
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "profiles.yml").write_text(yaml.safe_dump(profile, sort_keys=False))
+    return directory
 
 
-def target(config: Config, package: str) -> Path:
-    """Where dbt writes the package's run_results.json, manifest.json and sources.json."""
-    return config.workdir / package / "target"
+def output(config: Config, label: str) -> Path:
+    """The source's profile and dbt output: .dactopus/<label>/."""
+    return config.workdir / label
+
+
+def target(config: Config, label: str) -> Path:
+    """Where dbt writes the source's run_results.json, manifest.json and sources.json."""
+    return output(config, label) / "target"
 
 
 def command(
-    config: Config, library: Path, package: str, *dbt_args: str
+    config: Config, library: Path, label: str, *dbt_args: str
 ) -> tuple[list[str], dict[str, str]]:
-    """The dbt command line of a package (build by default) and its environment."""
-    project = library / "sources" / package
-    profiles = write_profile(config, project)
-    output = config.workdir / package
-    variables = dict(config.packages()[package].vars)
-    declared = deployment(config.models, library, package).vars
-    variables[declared["input_database"]] = config.clickhouse.input_database
+    """The dbt command line of a source (build by default) and its environment."""
+    source = config.sources[label]
+    project = library / "sources" / source.package
+    where = output(config, label)
+    profiles = write_profile(config, project, source.database, where)
+    variables = dict(source.vars)
+    declared = deployment(config.models, library, source.package).vars
+    variables[declared["input_database"]] = source.input_database
+    variables[declared["source_id"]] = label
     if "time_zone" in declared:
-        variables[declared["time_zone"]] = config.store.timezone
+        variables[declared["time_zone"]] = source.timezone
     argv = [
         _dbt(),
         *(dbt_args or ("build",)),
@@ -88,9 +97,9 @@ def command(
         "--profiles-dir",
         str(profiles),
         "--target-path",
-        str(output / "target"),
+        str(where / "target"),
         "--log-path",
-        str(output / "logs"),
+        str(where / "logs"),
         "--vars",
         json.dumps(variables),
     ]
@@ -104,28 +113,77 @@ def command(
     return argv, env
 
 
-def _run(config: Config, library: Path, package: str, *dbt_args: str, writes: str) -> None:
-    """Run dbt on a package; raise when it could not run at all.
+def failure(config: Config, label: str, writes: str) -> Path:
+    """Where a dbt run that could not write ``writes`` leaves its step and dbt's error."""
+    return output(config, label) / f"{Path(writes).stem}.error"
+
+
+# dbt's console output: colour codes, and the time before each line's text.
+_COLOUR = re.compile(r"\x1b\[[0-9;]*m")
+_TIME = re.compile(r"^\d\d:\d\d:\d\d  ")
+# The lines of a run kept for its error, which comes last.
+_KEPT = 200
+
+
+def _error(lines: list[str]) -> str:
+    """dbt's error, from the console lines of a run that could not run.
+
+    dbt 1.11.16 prints "Encountered an error:" and the error below it; a
+    package's own message (raise_compiler_error) is in it, followed by the
+    macros that called it (2026-11-02). Without that line, the last lines.
+    """
+    text = [_TIME.sub("", _COLOUR.sub("", line)).rstrip() for line in lines]
+    starts = [i for i, line in enumerate(text) if line.strip() == "Encountered an error:"]
+    found = text[starts[-1] + 1 :] if starts else text[-5:]
+    kept = [line.strip() for line in found if line.strip() and not line.strip().startswith(">")]
+    return " ".join(kept) or "no output"
+
+
+def _run(config: Config, library: Path, label: str, *dbt_args: str, writes: str) -> None:
+    """Run dbt on a source; raise when it could not run at all.
 
     dbt exits with 1 when a model, test or source fails and with 2 when
     it could not run (dbt 1.11.16, 2026-10-22); the file it writes tells the two
-    apart. Failures are read from that file by the checks.
+    apart. Failures are read from that file by the checks; a run that could
+    not run leaves its step and dbt's error next to it, for the checks too.
     """
-    argv, env = command(config, library, package, *dbt_args)
-    written = target(config, package) / writes
+    argv, env = command(config, library, label, *dbt_args)
+    written = target(config, label) / writes
+    failed = failure(config, label, writes)
     written.unlink(missing_ok=True)
-    print(f"build: dbt {' '.join(dbt_args)} of {package}", file=sys.stderr)
-    # dbt prints its own progress; the password is only in the environment.
-    result = subprocess.run(argv, env=env, cwd=config.workdir)
-    if result.returncode not in (0, 1) or not written.exists():
+    failed.unlink(missing_ok=True)
+    step = f"dbt {' '.join(dbt_args)}"
+    print(f"build: {step} of {label}", file=sys.stderr)
+    # dbt prints its own progress, passed on as it comes; the password is
+    # only in the environment.
+    with subprocess.Popen(
+        argv, env=env, cwd=config.workdir, stdout=subprocess.PIPE, text=True
+    ) as process:
+        assert process.stdout is not None
+        lines: deque[str] = deque(maxlen=_KEPT)
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            lines.append(line)
+    if process.returncode not in (0, 1) or not written.exists():
+        message = _error(list(lines))
+        failed.write_text(f"{step}\n{message}\n")
         raise BuildError(
-            f"build: dbt {' '.join(dbt_args)} of {package} could not run (exit "
-            f"{result.returncode}); see its output above and "
-            f"{config.workdir / package / 'logs' / 'dbt.log'}."
+            f"build: {step} of {label} could not run (exit {process.returncode}): {message} "
+            f"See {output(config, label) / 'logs' / 'dbt.log'}."
         )
 
 
-def build(config: Config, library: Path, package: str, full_refresh: bool = False) -> None:
+def dbt_error(config: Config, label: str, writes: str) -> tuple[str, str] | None:
+    """The step and dbt's error of the last run that could not write ``writes``, if any."""
+    path = failure(config, label, writes)
+    if not path.is_file():
+        return None
+    step, _, message = path.read_text().partition("\n")
+    return step, message.strip()
+
+
+def build(config: Config, library: Path, label: str, full_refresh: bool = False) -> None:
     """dbt build: the models, their tests and unit tests.
 
     A full refresh rebuilds the canonical tables from the input tables as
@@ -133,17 +191,17 @@ def build(config: Config, library: Path, package: str, full_refresh: bool = Fals
     swaps them when it is complete.
     """
     args = ("build", "--full-refresh") if full_refresh else ("build",)
-    _run(config, library, package, *args, writes="run_results.json")
+    _run(config, library, label, *args, writes="run_results.json")
 
 
-def test(config: Config, library: Path, package: str) -> None:
+def test(config: Config, library: Path, label: str) -> None:
     """dbt test: the tests and unit tests over the tables as they are."""
-    _run(config, library, package, "test", writes="run_results.json")
+    _run(config, library, label, "test", writes="run_results.json")
 
 
-def freshness(config: Config, library: Path, package: str) -> None:
+def freshness(config: Config, library: Path, label: str) -> None:
     """dbt source freshness: the age of the input against the package's thresholds."""
-    _run(config, library, package, "source", "freshness", writes="sources.json")
+    _run(config, library, label, "source", "freshness", writes="sources.json")
 
 
 @dataclass(frozen=True)
@@ -189,33 +247,32 @@ def misdated(
 
 
 def check_zone(client: Client, config: Config, library: Path, refresh: set[str]) -> None:
-    """Refuse to build over tables built in a zone other than store.timezone.
+    """Refuse to build over tables built in a zone other than the source's.
 
     The incremental models of a package with a time zone variable rebuild
     only the rows that changed, so a build after the zone changed would
-    leave the tables with days of both zones. A package rebuilt with
+    leave the tables with days of both zones. A source rebuilt with
     --full-refresh is not counted.
     """
-    zone = config.store.timezone
     found: dict[str, list[str]] = {}
-    for package in config.packages():
-        declared = deployment(config.models, library, package)
-        if "time_zone" not in declared.vars or package in refresh:
+    for label, source in config.sources.items():
+        declared = deployment(config.models, library, source.package)
+        if "time_zone" not in declared.vars or label in refresh:
             continue
         for counted in declared.daily:
             if counted.time is None:
                 continue
-            off = misdated(client, config.clickhouse.database, counted, zone)
+            off = misdated(client, source.database, counted, source.timezone)
             if off.rows:
-                found.setdefault(package, []).append(
-                    f"{off.rows:,} of {off.of:,} rows of {counted.table} ({package})"
+                found.setdefault(label, []).append(
+                    f"{off.rows:,} of {off.of:,} rows of {counted.table} ({label}) fall on "
+                    f"another day in {source.timezone}"
                 )
     if found:
-        packages = " ".join(found)
-        tables = ", ".join(t for ts in found.values() for t in ts)
+        labels = " ".join(found)
+        tables = "; ".join(t for ts in found.values() for t in ts)
         raise BuildError(
             f"build: the tables of {', '.join(found)} were built in a time zone other than "
-            f"store.timezone ({zone}): {tables} fall on another day in it. Run "
-            f"`dactopus run --full-refresh {packages}` once to rebuild them; until then "
-            "the agent keeps answering from the current tables."
+            f"the source's: {tables}. Run `dactopus run --full-refresh {labels}` once to "
+            "rebuild them; until then the agent keeps answering from the current tables."
         )

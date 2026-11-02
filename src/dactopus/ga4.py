@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 import re
 import sys
+from collections.abc import Mapping
 from datetime import date, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import pyarrow as pa
 import yaml
@@ -39,14 +40,14 @@ class Export(Protocol):
         """The rows of a daily table, with the given top-level columns."""
 
 
-def lookback_days(package: GA4, library: Path) -> int:
-    """ga4_lookback_days from the configuration, else the package's default."""
-    if "ga4_lookback_days" in package.vars:
+def lookback_days(label: str, variables: Mapping[str, Any], library: Path) -> int:
+    """ga4_lookback_days from the source's vars, else the package's default."""
+    if "ga4_lookback_days" in variables:
         try:
-            return int(package.vars["ga4_lookback_days"])
+            return int(variables["ga4_lookback_days"])
         except (TypeError, ValueError):
             raise LoadError(
-                "ga4: packages.ga4.vars.ga4_lookback_days: expected a whole number of days."
+                f"{label}: sources.{label}.vars.ga4_lookback_days: expected a whole number of days."
             ) from None
     project = yaml.safe_load((library / "sources/ga4/dbt_project.yml").read_text())
     return int(project["vars"]["ga4_lookback_days"])
@@ -119,19 +120,19 @@ def credentials_for(package: GA4, environ: dict[str, str] | None = None):
             )
         except (OSError, ValueError) as exc:
             raise LoadError(
-                f"ga4: cannot read the service account key "
-                f"packages.ga4.credentials_file ({package.credentials_file}): {exc}"
+                f"{package.label}: cannot read the service account key "
+                f"sources.{package.label}.credentials_file ({package.credentials_file}): {exc}"
             ) from None
         return credentials, (
             f"service account {credentials.service_account_email} "
-            "from packages.ga4.credentials_file"
+            f"from sources.{package.label}.credentials_file"
         )
     try:
         credentials, _ = google.auth.default(scopes=_SCOPES)
     except DefaultCredentialsError:
         raise LoadError(
-            "ga4: no Google credentials. Run `gcloud auth application-default "
-            "login`, or name a service account key in packages.ga4.credentials_file."
+            f"{package.label}: no Google credentials. Run `gcloud auth application-default "
+            f"login`, or name a service account key in sources.{package.label}.credentials_file."
         ) from None
     if isinstance(credentials, user_credentials.Credentials):
         return credentials.with_quota_project(package.project), (
@@ -141,7 +142,7 @@ def credentials_for(package: GA4, environ: dict[str, str] | None = None):
     if environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
         return credentials, (
             f"service account {email} from GOOGLE_APPLICATION_CREDENTIALS; unset it "
-            "to use the gcloud login, or name a key in packages.ga4.credentials_file"
+            f"to use the gcloud login, or name a key in sources.{package.label}.credentials_file"
         )
     return credentials, f"{email}, the default credentials of this machine"
 

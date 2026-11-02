@@ -7,12 +7,53 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+### Added
+
+- Any package of the models library: a source names it in `package`. The
+  runner loads GA4 and Shopify; it builds, checks and serves the others
+  (WooCommerce, Sensor.Community) over the input the client's transport
+  (CDC) or the client writes, and leaves that database alone.
+- Several stores, GA4 properties or sensor networks in one installation,
+  each a source under its own label: 1 to 64 of `a-z`, `0-9` and `_`,
+  passed to the package as its `source_id`. Each source builds into a
+  database of its own, `<clickhouse.database>_<label>`, from its input in
+  `<clickhouse.database>_<label>_raw` or the database its
+  `input_database` names. A label whose database is another source's
+  input, and two sources of one package reading one input database, are
+  refused.
+- A source takes `timezone`, the zone its days are in: a store package is
+  built in it, and the time zone check counts the days of the source's
+  tables in it (for GA4 the property's zone, for Sensor.Community UTC).
+  The report says when a source's days are in another zone than the
+  installation's.
+- A source dbt cannot build, test or measure (a package's required
+  variable missing, as `woocommerce_currency`) no longer stops the run:
+  the other sources go on, the report shows dbt's error with the
+  package's message, and the run exits with 1.
+- A finding has an optional `source`, the label of the source it is
+  about. The report groups the findings and the rows per day by source,
+  in the order of the configuration, and names the source on each line of
+  its three answers.
+
 ### Changed
 
-- The sample configuration of `dactopus init` and the tests use the
-  models library v0.9.0. The comment on `models.version` in the sample
-  says to run `dactopus run --full-refresh` once after moving to a
-  release that changes a model's columns.
+- The configuration file. `sources`, a mapping of labels to sources,
+  replaces `packages`; `timezone` at the top replaces `store.timezone`
+  and is the installation's zone, "today" in `dactopus serve` and the
+  zone of each source that names none; `clickhouse.input_database` is
+  gone, and `clickhouse.database` is the prefix of the sources' databases.
+  A configuration of 0.2 is refused: write it again from `dactopus init`.
+- `dactopus run --full-refresh` takes labels.
+- dbt's output for each source goes to `.dactopus/<label>/`, with the
+  profile that writes to the source's database.
+- The models library v0.9.0 or later: an earlier one has no labels, and
+  is refused before anything runs. The sample configuration and the tests
+  use v0.9.0. The comment on `models.version` in the sample says to run
+  `dactopus run --full-refresh` once after moving to a release that
+  changes a model's columns.
+- A package the library does not have is named with the packages it
+  has; a source's `vars` may not set the variables of the label, the
+  input database or the time zone.
 
 ## [0.2.1] - 2026-11-01
 

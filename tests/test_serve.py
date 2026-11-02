@@ -19,22 +19,22 @@ def _config(
     serve_section=None,
 ) -> config.Config:
     all_packages = {
-        "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
-        "shopify": {"shop": "dactopus-dev"},
+        "ga4": {"package": "ga4", "project": "p", "dataset": "bigquery-public-data.ga4_sample"},
+        "shopify": {"package": "shopify", "shop": "dactopus-dev"},
     }
-    clickhouse = {"url": url, "input_database": "raw", "database": database}
+    clickhouse = {"url": url, "database": database}
     if environ and serve_section is None:
         clickhouse["password_env"] = "CLICKHOUSE_PASSWORD"
     data = {
         "clickhouse": clickhouse,
-        "store": {"timezone": "America/New_York"},
+        "timezone": "America/New_York",
         "models": {"version": "v0.9.0"},
-        "packages": {name: all_packages[name] for name in packages},
+        "sources": {name: all_packages[name] for name in packages},
     }
     if serve_section is not None:
         data["serve"] = serve_section
     path = tmp_path / "dactopus.yaml"
-    path.write_text(yaml.safe_dump(data))
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
     return config.load(path, environ=environ or {}, serving=True)
 
 
@@ -67,7 +67,7 @@ def _library(tmp_path: Path, files=None, ga4_model=None) -> Path:
         (("ga4", "shopify"), ["entities/web_analytics.yaml", "entities/commerce.yaml"]),
     ],
 )
-def test_files_are_the_domains_of_the_packages(tmp_path, packages, files):
+def test_files_are_the_domains_of_the_sources_packages(tmp_path, packages, files):
     cfg = _config(tmp_path, "http://default@127.0.0.1:8123", packages)
     root = _library(tmp_path)
     assert serve.model_files(cfg, root) == [root / name for name in files]
@@ -86,7 +86,7 @@ def test_missing_model_file_names_the_package(tmp_path):
         serve.model_files(cfg, root)
 
 
-def test_url_reads_the_canonical_database(tmp_path):
+def test_url_reads_the_unions_database(tmp_path):
     cfg = _config(tmp_path, "http://loader@db.local:18123")
     assert serve.url(cfg) == "http://loader@db.local:18123/canonical"
 
@@ -149,6 +149,7 @@ def test_serve_error_goes_to_stderr(tmp_path, monkeypatch, capsys):
     path = tmp_path / "dactopus.yaml"
     assert "version: v0.9.0" in config.SAMPLE
     root = _library(tmp_path, files=[])
+    (root / "unions").mkdir()
     path.write_text(config.SAMPLE.replace("version: v0.9.0", f"path: {root}"))
     assert main(["serve", "--config", str(path)]) == 1
     captured = capsys.readouterr()

@@ -15,18 +15,22 @@ def _write(tmp_path: Path, data: dict) -> Path:
 
 def _base() -> dict:
     return {
-        "clickhouse": {
-            "url": "http://loader@db.local:18123",
-            "input_database": "raw",
-            "database": "canonical",
-        },
-        "store": {"timezone": "America/New_York"},
+        "clickhouse": {"url": "http://loader@db.local:18123", "database": "dactopus"},
+        "timezone": "America/New_York",
         "models": {"version": "v0.9.0"},
-        "packages": {
-            "ga4": {"project": "p", "dataset": "bigquery-public-data.ga4_sample"},
-            "shopify": {"shop": "dactopus-dev"},
+        "sources": {
+            "web": {
+                "package": "ga4",
+                "project": "p",
+                "dataset": "bigquery-public-data.ga4_sample",
+            },
+            "shop_us": {"package": "shopify", "shop": "dactopus-dev"},
         },
     }
+
+
+def _load(tmp_path: Path, data: dict) -> config.Config:
+    return config.load(_write(tmp_path, data), environ={})
 
 
 def test_sample_loads(tmp_path):
@@ -35,46 +39,186 @@ def test_sample_loads(tmp_path):
     loaded = config.load(path, environ={})
     assert loaded.clickhouse.database == "dactopus"
     assert loaded.models.version == "v0.9.0"
-    assert list(loaded.packages()) == ["ga4", "shopify"]
+    assert [(s.label, s.package) for s in loaded.sources.values()] == [
+        ("web", "ga4"),
+        ("shop", "shopify"),
+    ]
     assert loaded.workdir == tmp_path.resolve() / ".dactopus"
 
 
-def test_sample_sets_the_store_time_zone_and_no_package_one(tmp_path):
+def test_sample_sets_the_installation_time_zone_and_no_source_one(tmp_path):
     path = tmp_path / "dactopus.yaml"
     config.write_sample(path)
     loaded = config.load(path, environ={})
-    assert loaded.store.timezone == "UTC"
-    assert loaded.shopify.vars == {}
+    assert loaded.timezone == "UTC"
+    assert {s.timezone for s in loaded.sources.values()} == {"UTC"}
+    assert not any(s.own_timezone for s in loaded.sources.values())
+    assert loaded.sources["shop"].vars == {}
     assert "dactopus run --full-refresh" in config.SAMPLE
 
 
+def test_the_commented_source_of_the_sample_loads(tmp_path):
+    """The WooCommerce source the sample comments out is a working example."""
+    lines = config.SAMPLE.splitlines()
+    at = lines.index("  # woo_eu:")
+    text = "\n".join([*lines[:at], *(line.replace("  # ", "  ", 1) for line in lines[at:])])
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(text)
+    woo = config.load(path, environ={}).sources["woo_eu"]
+    assert (woo.package, woo.timezone, woo.input_database, woo.loader) == (
+        "woocommerce",
+        "Europe/Berlin",
+        "woocommerce_raw",
+        None,
+    )
+    assert woo.vars == {"woocommerce_currency": "EUR"}
+
+
+def test_each_source_has_databases_under_the_prefix(tmp_path):
+    loaded = _load(tmp_path, _base())
+    web, shop = loaded.sources["web"], loaded.sources["shop_us"]
+    assert (web.database, web.input_database) == ("dactopus_web", "dactopus_web_raw")
+    assert (shop.database, shop.input_database) == ("dactopus_shop_us", "dactopus_shop_us_raw")
+
+
+def test_a_source_names_its_input_database_and_time_zone(tmp_path):
+    data = _base()
+    data["sources"]["woo_eu"] = {
+        "package": "woocommerce",
+        "timezone": "Europe/Berlin",
+        "input_database": "woocommerce_raw",
+        "vars": {"woocommerce_currency": "EUR"},
+    }
+    loaded = _load(tmp_path, data)
+    woo = loaded.sources["woo_eu"]
+    assert (woo.database, woo.input_database) == ("dactopus_woo_eu", "woocommerce_raw")
+    assert (woo.timezone, woo.own_timezone) == ("Europe/Berlin", True)
+    assert (loaded.sources["web"].timezone, loaded.sources["web"].own_timezone) == (
+        "America/New_York",
+        False,
+    )
+
+
+def test_loaders_belong_to_their_packages(tmp_path):
+    loaded = _load(tmp_path, _base())
+    web, shop = loaded.sources["web"].loader, loaded.sources["shop_us"].loader
+    assert isinstance(web, config.GA4) and web.label == "web"
+    assert isinstance(shop, config.Shopify) and shop.label == "shop_us"
+    assert shop.client_id_env == "SHOPIFY_CLIENT_ID"
+
+
 @pytest.mark.parametrize(
-    ("store", "message"),
+    ("sources", "message"),
     [
-        (None, "store: missing"),
-        ({}, "store.timezone: missing"),
-        ({"timezone": "Mars/Olympus"}, "store.timezone: 'Mars/Olympus' is not a time zone"),
-        ({"timezone": "../etc/passwd"}, "is not a time zone"),
-        # A file on a case-insensitive disk, not a name Shopify answers.
-        ({"timezone": "america/new_york"}, "'america/new_york' is not a time zone"),
-        ({"timezone": "UTC", "zone": "UTC"}, "store: unknown key zone"),
+        (None, "sources: missing"),
+        ({}, "sources: expected a mapping of labels to sources; name at least one"),
+        ({"Shop": {"package": "shopify", "shop": "s"}}, "the label 'Shop' is not 1 to 64"),
+        ({"a" * 65: {"package": "shopify", "shop": "s"}}, "is not 1 to 64"),
+        ({"shop-us": {"package": "shopify", "shop": "s"}}, "the label 'shop-us'"),
+        ({"shop": {"shop": "s"}}, "sources.shop.package: missing"),
+        ({"shop": {"package": "../x"}}, "sources.shop.package: '../x' is not a package"),
+        ({"shop": {"package": "shopify"}}, "sources.shop.shop: missing"),
+        (
+            {"woo": {"package": "woocommerce", "shop": "s"}},
+            "sources.woo: unknown key shop; allowed: input_database, package, timezone, vars",
+        ),
+        ({"woo": {"package": "woocommerce", "vars": []}}, "sources.woo.vars: expected a mapping"),
+        (
+            {"woo": {"package": "woocommerce", "timezone": "Mars/Olympus"}},
+            "sources.woo.timezone: 'Mars/Olympus' is not a time zone",
+        ),
+        (
+            {"woo": {"package": "woocommerce", "input_database": "a.b"}},
+            "sources.woo.input_database: 'a.b' is not a plain database name",
+        ),
     ],
 )
-def test_store_time_zone_is_checked(tmp_path, store, message):
+def test_sources_are_checked(tmp_path, sources, message):
     data = _base()
-    if store is None:
-        del data["store"]
+    if sources is None:
+        del data["sources"]
     else:
-        data["store"] = store
+        data["sources"] = sources
     with pytest.raises(ConfigError, match=message):
-        config.load(_write(tmp_path, data), environ={})
+        _load(tmp_path, data)
+
+
+def test_a_canonical_database_is_no_input_database(tmp_path):
+    """A label ending in _raw has the database another source's input defaults to."""
+    data = _base()
+    data["sources"]["shop_us_raw"] = {"package": "woocommerce"}
+    with pytest.raises(
+        ConfigError,
+        match="sources.shop_us: its input database dactopus_shop_us_raw"
+        " holds the canonical tables of shop_us_raw",
+    ):
+        _load(tmp_path, data)
+
+
+def test_no_input_database_is_the_unions_database(tmp_path):
+    data = _base()
+    data["sources"]["shop_us"]["input_database"] = "dactopus"
+    with pytest.raises(ConfigError, match="its input database dactopus is clickhouse.database"):
+        _load(tmp_path, data)
+
+
+def test_two_sources_of_one_package_do_not_share_an_input_database(tmp_path):
+    data = _base()
+    data["sources"]["shop_us"]["input_database"] = "shopify_raw"
+    data["sources"]["shop_eu"] = {
+        "package": "shopify",
+        "shop": "eu",
+        "input_database": "shopify_raw",
+    }
+    with pytest.raises(ConfigError, match="sources.shop_us: shop_eu reads the same input database"):
+        _load(tmp_path, data)
+
+
+def test_sources_of_different_packages_may_share_an_input_database(tmp_path):
+    """An installation of 0.2 keeps its input in one database (dactopus_raw)."""
+    data = _base()
+    data["sources"]["web"]["input_database"] = "dactopus_raw"
+    data["sources"]["shop_us"]["input_database"] = "dactopus_raw"
+    loaded = _load(tmp_path, data)
+    assert {s.input_database for s in loaded.sources.values()} == {"dactopus_raw"}
+
+
+@pytest.mark.parametrize(
+    ("zone", "message"),
+    [
+        (None, "timezone: missing"),
+        ("Mars/Olympus", "timezone: 'Mars/Olympus' is not a time zone"),
+        ("../etc/passwd", "is not a time zone"),
+        # A file on a case-insensitive disk, not a name Shopify answers.
+        ("america/new_york", "'america/new_york' is not a time zone"),
+    ],
+)
+def test_installation_time_zone_is_checked(tmp_path, zone, message):
+    data = _base()
+    if zone is None:
+        del data["timezone"]
+    else:
+        data["timezone"] = zone
+    with pytest.raises(ConfigError, match=message):
+        _load(tmp_path, data)
 
 
 @pytest.mark.parametrize("zone", ["America/New_York", "Europe/Kyiv"])
-def test_store_time_zone_is_known_without_the_machine_database(tmp_path, no_system_zones, zone):
+def test_time_zone_is_known_without_the_machine_database(tmp_path, no_system_zones, zone):
     data = _base()
-    data["store"] = {"timezone": zone}
-    assert config.load(_write(tmp_path, data), environ={}).store.timezone == zone
+    data["timezone"] = zone
+    assert _load(tmp_path, data).timezone == zone
+
+
+def test_the_settings_of_0_2_are_refused(tmp_path):
+    data = _base()
+    data["store"] = {"timezone": "UTC"}
+    with pytest.raises(ConfigError, match="the file: unknown key store"):
+        _load(tmp_path, data)
+    data = _base()
+    data["clickhouse"]["input_database"] = "dactopus_raw"
+    with pytest.raises(ConfigError, match="clickhouse: unknown key input_database"):
+        _load(tmp_path, data)
 
 
 def test_init_does_not_overwrite(tmp_path):
@@ -92,7 +236,6 @@ def test_connection_from_url_and_environment(tmp_path):
     ch = loaded.clickhouse
     assert (ch.host, ch.port, ch.user, ch.password) == ("db.local", 18123, "loader", "s3cret")
     assert "s3cret" not in repr(loaded)
-    assert loaded.shopify.client_id_env == "SHOPIFY_CLIENT_ID"
 
 
 @pytest.mark.parametrize(
@@ -139,20 +282,6 @@ def test_url_is_refused(tmp_path, url, message):
     with pytest.raises(ConfigError, match=message) as exc_info:
         config.load(_write(tmp_path, data), environ={})
     assert "pw" not in str(exc_info.value)
-
-
-def test_input_and_canonical_databases_differ(tmp_path):
-    data = _base()
-    data["clickhouse"]["database"] = "raw"
-    with pytest.raises(ConfigError, match="must differ"):
-        config.load(_write(tmp_path, data), environ={})
-
-
-def test_unknown_key_is_refused(tmp_path):
-    data = _base()
-    data["packages"]["woocommerce"] = {}
-    with pytest.raises(ConfigError, match="unknown key woocommerce"):
-        config.load(_write(tmp_path, data), environ={})
 
 
 def test_models_version_or_path(tmp_path):
