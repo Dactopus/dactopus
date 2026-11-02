@@ -1,0 +1,9 @@
+# What a deployment of this union sets and reads. A tool that deploys
+# it reads this file; it does not read the project's SQL. Format and
+# checks: tests/check_deployment.py.
+model: entities/iot.yaml
+# A role, and the dbt variable (dbt_project.yml) that plays it: the
+# databases of the networks, each with a deployment of its package. Rows
+# are counted per day in those databases, by each package's deployment.yml.
+vars:
+  input_databases: iot_union_databases

@@ -22,8 +22,8 @@ from .config import Config, ConfigError, Models
 
 ARCHIVE_URL = "https://github.com/Dactopus/dactopus-data-models/archive/refs/tags/{version}.tar.gz"
 
-# The first release whose packages ship a deployment.yml.
-DEPLOYMENT_SINCE = "v0.6.0"
+# The first release with labels (the role source_id) and unions.
+LIBRARY_SINCE = "v0.9.0"
 
 Fetch = Callable[[str], bytes]
 
@@ -117,11 +117,15 @@ def deployment(models: Models, root: Path, package: str) -> Deployment:
     relative = f"sources/{package}/deployment.yml"
     path = root / relative
     if not path.is_file():
-        if models.path is None:
-            action = f"set models.version to {DEPLOYMENT_SINCE} or later"
-        else:
-            action = f"update the checkout at models.path to {DEPLOYMENT_SINCE} or later"
-        raise LibraryError(f"{package}: the models library has no {relative}; {action}.")
+        if (root / "sources" / package).is_dir():
+            raise LibraryError(
+                f"{package}: the models library has no {relative}; {_upgrade(models)}."
+            )
+        found = sorted(p.parent.name for p in (root / "sources").glob("*/deployment.yml"))
+        raise LibraryError(
+            f"{package} is not a package of the models library {_where(models)}; its "
+            f"packages: {', '.join(found)}."
+        )
     where = f"{package}: {relative}"
     try:
         raw = yaml.safe_load(path.read_text())
@@ -133,8 +137,9 @@ def deployment(models: Models, root: Path, package: str) -> Deployment:
         raise LibraryError(f"{where}: model: missing; expected a path; report it.")
     variables = _mapping(section.get("vars"), f"{where}: vars")
     _name(variables, "input_database", f"{where}: vars")
-    if "time_zone" in variables:
-        _name(variables, "time_zone", f"{where}: vars")
+    for role in ("source_id", "time_zone"):
+        if role in variables:
+            _name(variables, role, f"{where}: vars")
     daily = section.get("daily")
     if not isinstance(daily, list):
         raise LibraryError(f"{where}: daily: missing; expected a list of tables; report it.")
@@ -160,18 +165,43 @@ def deployment(models: Models, root: Path, package: str) -> Deployment:
     )
 
 
-def check_vars(config: Config, root: Path) -> None:
-    """Check packages.<package>.vars against the variables each package declares."""
-    for package, settings in config.packages().items():
-        declared = deployment(config.models, root, package).vars
-        for role, source in (
-            ("input_database", "clickhouse.input_database"),
-            ("time_zone", "store.timezone"),
+def _where(models: Models) -> str:
+    return models.version if models.path is None else f"at {models.path}"
+
+
+def _upgrade(models: Models) -> str:
+    if models.path is None:
+        return f"set models.version to {LIBRARY_SINCE} or later"
+    return f"update the checkout at models.path to {LIBRARY_SINCE} or later"
+
+
+def check(config: Config, root: Path) -> None:
+    """Check the library against the sources: their packages, labels and vars.
+
+    The runner sets the variables of the roles input_database, source_id
+    and time_zone, so a source's vars may not.
+    """
+    if not (root / "unions").is_dir():
+        raise LibraryError(
+            f"The models library {_where(config.models)} has no unions/, which came in "
+            f"{LIBRARY_SINCE} with the labels of the sources; {_upgrade(config.models)}."
+        )
+    for label, source in config.sources.items():
+        declared = deployment(config.models, root, source.package).vars
+        if "source_id" not in declared:
+            raise LibraryError(
+                f"{source.package}: sources/{source.package}/deployment.yml maps no "
+                f"variable to the role source_id; {_upgrade(config.models)}."
+            )
+        for role, setting in (
+            ("input_database", f"sources.{label}.input_database or clickhouse.database"),
+            ("source_id", "the label"),
+            ("time_zone", f"sources.{label}.timezone or timezone"),
         ):
             reserved = declared.get(role)
-            if reserved is not None and reserved in settings.vars:
+            if reserved is not None and reserved in source.vars:
                 raise ConfigError(
-                    f"packages.{package}.vars: remove {reserved}; the runner sets it from {source}."
+                    f"sources.{label}.vars: remove {reserved}; the runner sets it from {setting}."
                 )
 
 

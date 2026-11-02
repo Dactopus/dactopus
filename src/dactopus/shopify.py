@@ -129,7 +129,10 @@ def access_token(package: Shopify, environ: dict[str, str] | None = None) -> str
         name for name in (package.client_id_env, package.client_secret_env) if not environ.get(name)
     ]
     if missing:
-        raise LoadError(f"shopify: the environment variable {', '.join(missing)} is not set.")
+        raise LoadError(
+            f"{package.label}: the environment variable {', '.join(missing)} of "
+            f"sources.{package.label} is not set."
+        )
     form = urllib.parse.urlencode(
         {
             "grant_type": "client_credentials",
@@ -200,17 +203,22 @@ def graphql(shop: str, token: str) -> Fetch:
     return fetch
 
 
-def check_time_zone(shop: str, token: str, zone: str) -> None:
-    """Refuse a store.timezone other than the shop's: the orders' days would be off."""
+def check_time_zone(package: Shopify, token: str, zone: str, setting: str) -> None:
+    """Refuse a source time zone other than the shop's: the orders' days would be off.
+
+    ``setting`` names where the zone comes from: the source's timezone or
+    the installation's.
+    """
+    shop, label = package.shop, package.label
     refused = (
         "check that the app is installed on the store and run again; nothing has been loaded yet."
     )
     found = _graphql(shop, token)(ZONE_QUERY, {}, refused)["shop"]["ianaTimezone"]
     if not _same_zone(zone, found):
         raise LoadError(
-            f"shopify: the time zone of {shop}.myshopify.com is {found}, and store.timezone "
-            f"is {zone}; set store.timezone to {found}, the shop's (Settings > General in "
-            "the Shopify admin)."
+            f"{label}: the time zone of {shop}.myshopify.com is {found}, and the source's "
+            f"is {zone} (from {setting}); set sources.{label}.timezone to {found}, the "
+            "shop's (Settings > General in the Shopify admin). Nothing has been loaded yet."
         )
 
 
@@ -401,7 +409,7 @@ def _pages(fetch: Fetch, field: str, filter: str):
         yield page["nodes"]
 
 
-def _require_input(client: Client, database: str) -> None:
+def _require_input(client: Client, database: str, label: str) -> None:
     """Refuse an input the load cannot fill, before any load.
 
     A models library before v0.7.0 has no products table. One before
@@ -428,7 +436,7 @@ def _require_input(client: Client, database: str) -> None:
             f"{LIBRARY_SINCE} or later. With {LIBRARY_SINCE} or later, the table "
             f"is older than the library: add the column as the library's changelog for "
             f"{LIBRARY_SINCE.removeprefix('v')} says ({LIBRARY_CHANGELOG}), then run "
-            "`dactopus run --full-refresh shopify`. Nothing has been loaded yet."
+            f"`dactopus run --full-refresh {label}`. Nothing has been loaded yet."
         )
 
 
@@ -437,7 +445,7 @@ def _insert(client: Client, database: str, table: str, rows: list[dict[str, Any]
     client.raw_insert(f"`{database}`.`{table}`", insert_block=block, fmt="JSONEachRow")
 
 
-def load(client: Client, fetch: Fetch, database: str) -> dict[str, int]:
+def load(client: Client, fetch: Fetch, database: str, label: str) -> dict[str, int]:
     """Append the orders and products updated since the last load, page by page.
 
     A page's lines and refunds go in before its orders, so the latest
@@ -447,7 +455,7 @@ def load(client: Client, fetch: Fetch, database: str) -> dict[str, int]:
     so the next load starts from it too.
     Returns the number of rows appended to each table.
     """
-    _require_input(client, database)
+    _require_input(client, database, label)
     counts = dict.fromkeys(TABLES, 0)
     start = since(client, database, "orders")
     for orders in _pages(fetch, "orders", f"updated_at:>='{start}'"):

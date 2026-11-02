@@ -1,0 +1,15 @@
+# What a deployment of this package sets and reads. A tool that deploys
+# the package reads this file; it does not read the package's SQL.
+# Format and checks: tests/check_deployment.py.
+model: entities/iot.yaml
+# A role, and the dbt variable (dbt_project.yml) that plays it. No
+# time_zone: a site has no time zone in the source, and reading_date is
+# the UTC day.
+vars:
+  input_database: sensor_community_input_database
+  source_id: sensor_community_source_id
+# The built tables a deployment counts rows per day in, by `date`, a Date
+# column. `time` is the column whose day `date` is, in UTC. `gap: true`:
+# a day without rows is a finding there.
+daily:
+  - {table: readings, date: reading_date, time: measured_at, gap: true}

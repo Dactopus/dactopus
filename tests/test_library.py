@@ -67,7 +67,7 @@ def test_unreadable_archive_is_refused(tmp_path):
         library.resolve(Models("v9.9.9", None), cache=tmp_path, fetch=lambda url: b"<html>")
 
 
-# The deployment.yml of the GA4 and Shopify packages of v0.9.0, and one
+# The deployment.yml of the packages and unions of v0.9.0, and a package
 # without vars.input_database.
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 CHECKOUT = Models(version=None, path=FIXTURE_LIBRARY)
@@ -101,15 +101,25 @@ def test_a_package_without_a_time_zone(tmp_path):
     ]
 
 
-def test_a_missing_file_names_what_to_raise():
+def test_a_package_without_the_file_names_what_to_raise(tmp_path):
+    (tmp_path / "sources" / "woocommerce").mkdir(parents=True)
     with pytest.raises(LibraryError) as found:
-        library.deployment(Models("v0.5.3", None), FIXTURE_LIBRARY, "woocommerce")
+        library.deployment(Models("v0.5.3", None), tmp_path, "woocommerce")
     assert str(found.value) == (
         "woocommerce: the models library has no sources/woocommerce/deployment.yml; "
-        "set models.version to v0.6.0 or later."
+        "set models.version to v0.9.0 or later."
     )
-    with pytest.raises(LibraryError, match="update the checkout at models.path to v0.6.0"):
-        library.deployment(CHECKOUT, FIXTURE_LIBRARY, "woocommerce")
+    with pytest.raises(LibraryError, match="update the checkout at models.path to v0.9.0"):
+        library.deployment(Models(None, tmp_path), tmp_path, "woocommerce")
+
+
+def test_an_unknown_package_names_the_library_s_packages():
+    with pytest.raises(LibraryError) as found:
+        library.deployment(Models("v0.9.0", None), FIXTURE_LIBRARY, "shopfy")
+    assert str(found.value) == (
+        "shopfy is not a package of the models library v0.9.0; its packages: broken, ga4, "
+        "sensor_community, shopify, woocommerce."
+    )
 
 
 def test_a_missing_key_names_the_package_and_the_file():
@@ -162,30 +172,69 @@ def test_a_wrong_declaration_is_refused(tmp_path, text, message):
         _declare(tmp_path, text)
 
 
-def _check_vars(tmp_path, old, new):
-    """check_vars over the sample configuration, edited, and the fixture library."""
+def _check(tmp_path, old="", new="", root=FIXTURE_LIBRARY):
+    """library.check over the sample configuration, edited, and the fixture library."""
     path = tmp_path / "dactopus.yaml"
     path.write_text(config.SAMPLE.replace(old, new))
-    library.check_vars(config.load(path, environ={}), FIXTURE_LIBRARY)
+    library.check(config.load(path, environ={}), root)
 
 
 def test_declared_vars_pass(tmp_path):
-    _check_vars(tmp_path, "", "")
+    _check(tmp_path)
 
 
 def test_input_database_variable_is_reserved(tmp_path):
-    with pytest.raises(ConfigError, match="packages.ga4.vars: remove ga4_input_database"):
-        _check_vars(tmp_path, "ga4_lookback_days: 3", "ga4_input_database: other")
+    with pytest.raises(
+        ConfigError,
+        match="sources.web.vars: remove ga4_input_database; the runner sets it from "
+        "sources.web.input_database or clickhouse.database",
+    ):
+        _check(tmp_path, "ga4_lookback_days: 3", "ga4_input_database: other")
+
+
+def test_label_variable_is_reserved(tmp_path):
+    with pytest.raises(
+        ConfigError,
+        match="sources.web.vars: remove ga4_source_id; the runner sets it from the label",
+    ):
+        _check(tmp_path, "ga4_lookback_days: 3", "ga4_source_id: other")
 
 
 def test_time_zone_variable_is_reserved(tmp_path):
     with pytest.raises(
         ConfigError,
-        match="packages.shopify.vars: remove shopify_timezone; the runner sets it from "
-        "store.timezone",
+        match="sources.shop.vars: remove shopify_timezone; the runner sets it from "
+        "sources.shop.timezone or timezone",
     ):
-        _check_vars(
+        _check(
             tmp_path,
             "client_secret_env: SHOPIFY_CLIENT_SECRET\n",
             "client_secret_env: SHOPIFY_CLIENT_SECRET\n    vars: {shopify_timezone: UTC}\n",
         )
+
+
+def test_a_library_without_unions_is_refused(tmp_path):
+    root = tmp_path / "library"
+    (root / "sources").mkdir(parents=True)
+    with pytest.raises(LibraryError) as found:
+        _check(tmp_path, root=root)
+    assert str(found.value) == (
+        "The models library v0.9.0 has no unions/, which came in v0.9.0 with the labels of "
+        "the sources; set models.version to v0.9.0 or later."
+    )
+
+
+def test_a_package_without_the_label_role_is_refused(tmp_path):
+    root = tmp_path / "library"
+    (root / "unions").mkdir(parents=True)
+    for package in ("ga4", "shopify"):
+        (root / "sources" / package).mkdir(parents=True)
+        text = (FIXTURE_LIBRARY / "sources" / package / "deployment.yml").read_text()
+        text = "\n".join(line for line in text.splitlines() if "source_id:" not in line)
+        (root / "sources" / package / "deployment.yml").write_text(text)
+    with pytest.raises(
+        LibraryError,
+        match="ga4: sources/ga4/deployment.yml maps no variable to the role source_id; set "
+        "models.version to v0.9.0 or later",
+    ):
+        _check(tmp_path, root=root)
