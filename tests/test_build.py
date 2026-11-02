@@ -239,6 +239,36 @@ def test_a_dbt_that_could_not_run_leaves_its_error_for_the_checks(tmp_path, monk
     assert build.dbt_error(cfg, "shopify", "sources.json") is None
 
 
+def test_what_a_dbt_that_could_not_run_wrote_is_not_its_results(tmp_path, monkeypatch):
+    cfg = _config(tmp_path)
+    build.target(cfg, "shopify").mkdir(parents=True)
+    written = build.target(cfg, "shopify") / "run_results.json"
+    _fake_dbt(monkeypatch, tmp_path, DBT_COULD_NOT_RUN, 2, writes=written)
+    with pytest.raises(build.BuildError):
+        build.build(cfg, _library(tmp_path), "shopify")
+    assert not written.exists()
+    assert build.dbt_error(cfg, "shopify", "run_results.json") == ("dbt build", PACKAGE_MESSAGE)
+
+
+def test_a_dbt_that_could_not_start_leaves_no_results_of_a_run_before(tmp_path, monkeypatch):
+    cfg = _config(tmp_path)
+    build.target(cfg, "shopify").mkdir(parents=True)
+    written = build.target(cfg, "shopify") / "run_results.json"
+    written.write_text("{}")
+
+    def missing(*args):
+        raise build.BuildError("build: dbt is not installed next to the runner.")
+
+    monkeypatch.setattr(build, "command", missing)
+    with pytest.raises(build.BuildError):
+        build.build(cfg, _library(tmp_path), "shopify")
+    assert not written.exists()
+    assert build.dbt_error(cfg, "shopify", "run_results.json") == (
+        "dbt build",
+        "build: dbt is not installed next to the runner.",
+    )
+
+
 def test_a_run_that_writes_its_results_clears_the_error_before(tmp_path, monkeypatch):
     cfg = _config(tmp_path)
     build.target(cfg, "shopify").mkdir(parents=True)

@@ -104,8 +104,9 @@ def _run(args: argparse.Namespace) -> int:
     for label, source in cfg.sources.items():
         if isinstance(source.loader, config.Shopify):
             tokens[label] = shopify.access_token(source.loader)
-            setting = f"sources.{label}.timezone" if source.own_timezone else "timezone"
-            shopify.check_time_zone(source.loader, tokens[label], source.timezone, setting)
+            shopify.check_time_zone(
+                source.loader, tokens[label], source.timezone, source.timezone_setting
+            )
     client = _connect(cfg)
     with _step(
         "build: counting the days of the sources' tables",

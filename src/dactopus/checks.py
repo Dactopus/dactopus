@@ -648,15 +648,14 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
                     )
                 )
             else:
-                setting = f"sources.{label}.timezone" if source.own_timezone else "timezone"
                 findings.append(
                     found(
                         "warn",
                         observed,
                         sentence=f"{_share(off.rows, off.of)} of the rows of {table} from "
                         f"{off.first} to {off.last} are on another day in {zone} (from "
-                        f"{setting}): the source counts its days in another time zone. Set "
-                        f"sources.{label}.timezone to the zone its days are in.",
+                        f"{source.timezone_setting}): the source counts its days in another "
+                        f"time zone. Set sources.{label}.timezone to the zone its days are in.",
                     )
                 )
     return findings

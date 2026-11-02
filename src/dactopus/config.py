@@ -95,6 +95,11 @@ class Source:
     # (CDC) or the client fills its input.
     loader: GA4 | Shopify | None
 
+    @property
+    def timezone_setting(self) -> str:
+        """The setting the source's zone comes from, for messages."""
+        return f"sources.{self.label}.timezone" if self.own_timezone else "timezone"
+
 
 @dataclass(frozen=True)
 class Config:
