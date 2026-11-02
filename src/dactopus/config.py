@@ -415,9 +415,11 @@ models:
   # path: ../dactopus-data-models
 
 # The ClickHouse user an AI agent's questions run as in `dactopus serve`, on
-# the host of clickhouse.url: give it read grants on the databases of the
-# installation only. Without this section, serve runs as the user of
-# clickhouse.url.
+# the host of clickhouse.url. The unions' views run as the user who asks, so
+# it needs SELECT on clickhouse.database and on the database of every source;
+# one grant covers them (and the input databases) by the prefix:
+#   GRANT SELECT ON `dactopus*`.* TO agent
+# Without this section, serve runs as the user of clickhouse.url.
 # serve:
 #   user: agent
 #   password_env: AGENT_CLICKHOUSE_PASSWORD

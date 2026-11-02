@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from .config import Config, ConfigError, Models
+from .config import Config, ConfigError, Models, Source
 
 ARCHIVE_URL = "https://github.com/Dactopus/dactopus-data-models/archive/refs/tags/{version}.tar.gz"
 
@@ -165,6 +165,53 @@ def deployment(models: Models, root: Path, package: str) -> Deployment:
     )
 
 
+@dataclass(frozen=True)
+class Union:
+    """What the runner sets and reads of a union: unions/<name>/deployment.yml."""
+
+    name: str
+    # The Ossie model the union's views serve, from the library root.
+    model: str
+    # The dbt variable that takes the databases of the sources it adds up.
+    databases: str
+
+
+@functools.cache
+def union_deployments(models: Models, root: Path) -> tuple[Union, ...]:
+    """The unions of the library at root, by name; read once per process."""
+    found = []
+    for path in sorted((root / "unions").glob("*/deployment.yml")):
+        name = path.parent.name
+        where = f"unions/{name}/deployment.yml"
+        try:
+            section = _mapping(yaml.safe_load(path.read_text()), where)
+        except yaml.YAMLError as exc:
+            raise LibraryError(f"{where} is not valid YAML: {exc}; report it.") from None
+        model = section.get("model")
+        if not isinstance(model, str) or not model:
+            raise LibraryError(f"{where}: model: missing; expected a path; report it.")
+        variables = _mapping(section.get("vars"), f"{where}: vars")
+        found.append(Union(name, model, _name(variables, "input_databases", f"{where}: vars")))
+    return tuple(found)
+
+
+def unions_of(config: Config, root: Path) -> dict[Union, list[Source]]:
+    """The unions that have sources, each with its sources in the configuration's order.
+
+    A source belongs to the union that serves the model its package declares.
+    """
+    found: dict[Union, list[Source]] = {}
+    for union in union_deployments(config.models, root):
+        members = [
+            source
+            for source in config.sources.values()
+            if deployment(config.models, root, source.package).model == union.model
+        ]
+        if members:
+            found[union] = members
+    return found
+
+
 def _where(models: Models) -> str:
     return models.version if models.path is None else f"at {models.path}"
 
@@ -186,8 +233,15 @@ def check(config: Config, root: Path) -> None:
             f"The models library {_where(config.models)} has no unions/, which came in "
             f"{LIBRARY_SINCE} with the labels of the sources; {_upgrade(config.models)}."
         )
+    served = {union.model for union in union_deployments(config.models, root)}
     for label, source in config.sources.items():
-        declared = deployment(config.models, root, source.package).vars
+        package = deployment(config.models, root, source.package)
+        if package.model not in served:
+            raise LibraryError(
+                f"{source.package}: no union of the models library serves {package.model}, so "
+                f"{label} could not be served; {_upgrade(config.models)}."
+            )
+        declared = package.vars
         if "source_id" not in declared:
             raise LibraryError(
                 f"{source.package}: sources/{source.package}/deployment.yml maps no "

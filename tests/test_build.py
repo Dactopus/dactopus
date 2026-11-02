@@ -277,3 +277,124 @@ def test_a_run_that_writes_its_results_clears_the_error_before(tmp_path, monkeyp
     _fake_dbt(monkeypatch, tmp_path, "Done.\n", 1, writes=written)
     build.build(cfg, _library(tmp_path), "shopify")
     assert build.dbt_error(cfg, "shopify", "run_results.json") is None
+
+
+def _stores(tmp_path, prefix="dactopus"):
+    """Two Shopify stores and a WooCommerce one, and a library with the commerce union."""
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "clickhouse": {"url": "http://loader@db.local:18123", "database": prefix},
+                "timezone": "America/New_York",
+                "models": {"path": str(FIXTURE_LIBRARY)},
+                "sources": {
+                    "main_store": {"package": "shopify", "shop": "s"},
+                    "europe_store": {"package": "woocommerce"},
+                    "outlet_store": {"package": "shopify", "shop": "o"},
+                },
+            },
+            sort_keys=False,
+        )
+    )
+    root = tmp_path / "lib"
+    for kind, name in (("sources", "shopify"), ("sources", "woocommerce"), ("unions", "commerce")):
+        project = root / kind / name
+        project.mkdir(parents=True)
+        (project / "dbt_project.yml").write_text(f"name: dactopus_{name}\nprofile: dactopus\n")
+        text = (FIXTURE_LIBRARY / kind / name / "deployment.yml").read_text()
+        (project / "deployment.yml").write_text(text)
+    return config.load(path, environ={}), root
+
+
+def test_a_union_builds_into_the_unions_database_over_the_databases_of_its_sources(tmp_path):
+    cfg, root = _stores(tmp_path)
+    key = build.UNION + "commerce"
+    argv, env = build.command(cfg, root, key)
+    assert argv[argv.index("--project-dir") + 1] == str(root / "unions" / "commerce")
+    # The databases go in the order of the configuration.
+    assert json.loads(argv[argv.index("--vars") + 1]) == {
+        "commerce_union_databases": [
+            "dactopus_main_store",
+            "dactopus_europe_store",
+            "dactopus_outlet_store",
+        ]
+    }
+    output = cfg.workdir / key
+    assert argv[argv.index("--target-path") + 1] == str(output / "target")
+    profile = yaml.safe_load((output / "profiles.yml").read_text())
+    assert profile["dactopus"]["outputs"]["default"]["schema"] == "dactopus"
+    assert "s3cret" not in (output / "profiles.yml").read_text()
+
+
+def test_a_union_has_a_directory_no_label_can_have(tmp_path):
+    cfg, root = _stores(tmp_path)
+    assert "-" in build.UNION
+    assert build.output(cfg, build.UNION + "commerce") != build.output(cfg, "commerce")
+
+
+def test_a_union_without_sources_has_no_build(tmp_path):
+    cfg, root = _stores(tmp_path)
+    with pytest.raises(build.BuildError, match="no union the iot union"):
+        build.command(cfg, root, build.UNION + "iot")
+
+
+def test_a_union_is_named_in_messages(tmp_path):
+    assert build.title("main_store") == "main_store"
+    assert build.title(build.UNION + "commerce") == "the commerce union"
+
+
+class _Tables:
+    """A client whose system.tables answers with the given names."""
+
+    def __init__(self, *names):
+        self.names = names
+        self.asked = []
+
+    def query(self, sql, parameters):
+        self.asked.append((sql, parameters))
+        return type("Result", (), {"result_rows": [(name,) for name in self.names]})()
+
+
+def test_the_unions_database_with_tables_stops_the_build(tmp_path):
+    cfg, root = _stores(tmp_path)
+    client = _Tables("order_lines", "orders")
+    with pytest.raises(build.BuildError) as refused:
+        build.check_unions(client, cfg, root)
+    assert str(refused.value) == (
+        "build: dactopus, the database of the unions, holds tables (order_lines, orders), and "
+        "a union would replace those it has the name of with views. Give clickhouse.database "
+        "another name, or drop the old tables if nothing reads them."
+    )
+    [(sql, parameters)] = client.asked
+    assert "engine != 'View'" in sql and parameters == {"db": "dactopus"}
+
+
+def test_many_tables_are_listed_in_part(tmp_path):
+    cfg, root = _stores(tmp_path)
+    with pytest.raises(build.BuildError, match=r"\(a, b, c, d, e, \.\.\.\)"):
+        build.check_unions(_Tables(*"abcdefg"), cfg, root)
+
+
+def test_a_database_of_views_passes(tmp_path):
+    cfg, root = _stores(tmp_path)
+    build.check_unions(_Tables(), cfg, root)
+
+
+def test_a_real_database_of_views_passes_and_one_with_a_table_stops(clickhouse, tmp_path):
+    client, database = clickhouse
+    cfg, root = _stores(tmp_path, prefix=database)
+    client.command(f"CREATE DATABASE `{database}`")
+    client.command(f"CREATE VIEW `{database}`.orders AS SELECT 1 AS order_id")
+    build.check_unions(client, cfg, root)
+    client.command(
+        f"CREATE TABLE `{database}`.refunds (refund_id Int64) ENGINE = MergeTree ORDER BY refund_id"
+    )
+    with pytest.raises(build.BuildError, match=r"holds tables \(refunds\)"):
+        build.check_unions(client, cfg, root)
+
+
+def test_a_missing_unions_database_passes(clickhouse, tmp_path):
+    client, database = clickhouse
+    cfg, root = _stores(tmp_path, prefix=database)
+    build.check_unions(client, cfg, root)

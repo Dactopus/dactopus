@@ -23,7 +23,7 @@ from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
 from . import library
-from .build import dbt_error, misdated, target
+from .build import dbt_error, misdated, target, title, union_key
 from .config import Config, Source
 
 Severity = Literal["pass", "skip", "warn", "fail", "error"]
@@ -112,26 +112,30 @@ _SCHEMA_CHANGE = "The source and target schemas on this incremental model are ou
 
 
 def dbt_results(client: Client, config: Config) -> list[Finding]:
-    """The models, tests and unit tests of the last dbt run of each source."""
+    """The models, tests and unit tests of the last dbt run of each source and union."""
     findings: list[Finding] = []
-    for label in config.sources:
-        where = target(config, label)
+    root = library.resolve(config.models)
+    keys = [*config.sources, *(union_key(u) for u in library.unions_of(config, root))]
+    for key in keys:
+        label = title(key)
+        noun = "source" if key in config.sources else "union"
+        where = target(config, key)
         try:
             results = json.loads((where / "run_results.json").read_text())
             manifest = json.loads((where / "manifest.json").read_text())
         except FileNotFoundError:
-            error = dbt_error(config, label, "run_results.json")
-            sentence = "The source has not been built yet: run `dactopus run`."
+            error = dbt_error(config, key, "run_results.json")
+            sentence = f"The {noun} has not been built yet: run `dactopus run`."
             if error is not None:
                 step, message = error
-                sentence = f"{step} of the source could not run: {message}"
+                sentence = f"{step} of the {noun} could not run: {message}"
             findings.append(
                 Finding(
                     check="dbt",
                     object=label,
                     severity="error",
                     observed="no dbt results" if error is None else f"{step} could not run",
-                    expected="a dbt run of the source",
+                    expected=f"a dbt run of the {noun}",
                     sentence=sentence,
                     source=label,
                 )
@@ -148,7 +152,7 @@ def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], label: str) -
     kind = unique_id.split(".", 1)[0]
     status = result["status"]
     severity = _STATUS.get(status, "error")
-    message = result.get("message") or status
+    message = _one_line(result.get("message") or status)
     failures = result.get("failures")
     observed = status if failures is None else f"{failures} rows"
     if kind == "model":
@@ -244,6 +248,12 @@ def _test_finding(
         "skip": f"{_cap(where)} did not run because an earlier step failed.",
     }.get(severity, f"{_cap(where)} could not run: {message}")
     return Finding("dbt", obj, severity, observed, "0 rows", sentence)
+
+
+def _one_line(message: str) -> str:
+    """dbt's message in one line: without the macros that called the failing one."""
+    lines = [line.strip() for line in message.splitlines()]
+    return " ".join(line for line in lines if line and not line.startswith(">"))
 
 
 def _cap(text: str) -> str:

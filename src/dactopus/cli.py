@@ -114,6 +114,12 @@ def _run(args: argparse.Namespace) -> int:
         "again; nothing has been loaded yet.",
     ):
         build.check_zone(client, cfg, root, refresh)
+    with _step(
+        "build: listing the tables of the unions' database",
+        "check that the ClickHouse user can read system.tables and run again; nothing has "
+        "been loaded yet.",
+    ):
+        build.check_unions(client, cfg, root)
     # A source without a loader has its input written by the client's
     # transport or by the client; the runner leaves that database alone.
     for label, source in cfg.sources.items():
@@ -133,6 +139,9 @@ def _run(args: argparse.Namespace) -> int:
                 shopify.load(client, fetch, database, label)
     for label in cfg.sources:
         _each(build.build, cfg, root, label, full_refresh=label in refresh)
+    # The unions see each source as it was just built.
+    for union in library.unions_of(cfg, root):
+        _each(build.build, cfg, root, build.union_key(union))
     return _report(cfg, root, client)
 
 
@@ -142,6 +151,8 @@ def _check(args: argparse.Namespace) -> int:
     client = _connect(cfg)
     for label in cfg.sources:
         _each(build.test, cfg, root, label)
+    for union in library.unions_of(cfg, root):
+        _each(build.test, cfg, root, build.union_key(union))
     return _report(cfg, root, client)
 
 
