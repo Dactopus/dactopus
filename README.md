@@ -165,13 +165,16 @@ reconciliation = "my_checks:reconcile_with_shopify"
 
 `dactopus serve` runs the MCP server of dactopus-ossie-clickhouse over
 stdio, for an AI agent to start as a subprocess. It serves the model
-file each configured package names in its `deployment.yml` in the
-library, read as one model:
+of each union of the library that has sources, read as one model. A
+union is a set of views in `clickhouse.database` over the canonical
+tables of every source of its kind, which `dactopus run` builds after
+the sources:
 
-| Package | Model file of the library |
-| --- | --- |
-| GA4 | `entities/web_analytics.yaml` |
-| Shopify | `entities/commerce.yaml` |
+| Union | Its sources | Model file of the library |
+| --- | --- | --- |
+| `web_analytics` | GA4 | `entities/web_analytics.yaml` |
+| `commerce` | Shopify, WooCommerce | `entities/commerce.yaml` |
+| `iot` | Sensor.Community | `entities/iot.yaml` |
 
 The models name their tables without a database; the executor reads them
 in `clickhouse.database`. The agent sees and runs only what its ClickHouse
@@ -188,9 +191,13 @@ serve:
 ```sql
 CREATE USER agent IDENTIFIED BY '...';
 GRANT SELECT ON dactopus.* TO agent;
+GRANT SELECT ON dactopus_website.* TO agent;
+GRANT SELECT ON dactopus_main_store.* TO agent;
 ```
 
-Read grants on the canonical database are enough. Each command reads only
+The views of the unions run as the user who asks, so the agent reads
+`clickhouse.database` and the database of every source, and no input
+database. Each command reads only
 the password it connects with: `serve` needs the variable
 `serve.password_env` names, `run` and `check` the one
 `clickhouse.password_env` names. Without the `serve` section, `serve` runs

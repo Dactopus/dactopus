@@ -221,3 +221,38 @@ def test_serve_user_with_read_grants_is_enough(tmp_path, clickhouse, server_url)
         assert executor.execute(Query(("orders",), (), (), (), None)).rows == [(2,)]
     finally:
         server.command(f"DROP USER IF EXISTS `{user}`")
+
+
+def test_a_union_view_reads_as_the_serve_user(tmp_path, clickhouse, server_url):
+    """A union's view runs as the user who asks (ClickHouse 26.9.27, 2026-11-03),
+    so the serve user needs the source's database as well as the unions'."""
+    from clickhouse_connect.driver.exceptions import DatabaseError
+    from dactopus_ossie_clickhouse.executor import connect
+
+    server, database = clickhouse
+    store, user, secret = f"{database}_main_store", f"{database}_agent", "agent-secret"
+    server.command(f"CREATE DATABASE `{database}`")
+    server.command(f"CREATE DATABASE `{store}`")
+    server.command(f"CREATE USER `{user}` IDENTIFIED BY '{secret}'")
+    try:
+        server.command(
+            f"CREATE TABLE `{store}`.orders (order_id Int64) ENGINE = MergeTree ORDER BY order_id"
+        )
+        server.command(f"INSERT INTO `{store}`.orders VALUES (1), (2)")
+        server.command(f"CREATE VIEW `{database}`.orders AS SELECT * FROM `{store}`.orders")
+        server.command(f"GRANT SELECT ON `{database}`.* TO `{user}`")
+        cfg = _config(
+            tmp_path,
+            server_url,
+            environ={"AGENT_PASSWORD": secret},
+            database=database,
+            serve_section={"user": user, "password_env": "AGENT_PASSWORD"},
+        )
+        client = connect(serve.url(cfg))
+        with pytest.raises(DatabaseError, match="Not enough privileges"):
+            client.query("SELECT count() FROM orders")
+        server.command(f"GRANT SELECT ON `{store}`.* TO `{user}`")
+        assert client.query("SELECT count() FROM orders").result_rows == [(2,)]
+    finally:
+        server.command(f"DROP USER IF EXISTS `{user}`")
+        server.command(f"DROP DATABASE IF EXISTS `{store}`")
