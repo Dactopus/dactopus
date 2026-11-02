@@ -34,6 +34,11 @@ a minor release may change the command line and the configuration file.
   about. The report groups the findings and the rows per day by source,
   in the order of the configuration, and names the source on each line of
   its three answers.
+- The unions of the models library: `dactopus run` builds each union
+  that has sources after the sources, as views in `clickhouse.database`
+  over the databases of its sources, and `dactopus check` tests them.
+  Their findings are grouped under the union's name ("the commerce
+  union"), which is their `source`.
 
 ### Changed
 
@@ -44,6 +49,16 @@ a minor release may change the command line and the configuration file.
   gone, and `clickhouse.database` is the prefix of the sources' databases.
   A configuration of 0.2 is refused: write it again from `dactopus init`.
 - `dactopus run --full-refresh` takes labels.
+- `dactopus serve` serves the model of each union that has sources, one
+  per area (commerce, web analytics), in place of each package's model.
+  The views run as the user who asks, so the `serve` user needs `SELECT`
+  on the database of every source as well as on `clickhouse.database`.
+- `dactopus run` refuses, before loading, a `clickhouse.database` that
+  holds tables, such as the canonical tables of 0.2: the unions would
+  replace those of the same name with views. Give `clickhouse.database`
+  another name, or drop the old tables if nothing reads them.
+- A source whose package's model no union of the library serves is
+  refused before anything runs.
 - dbt's output for each source goes to `.dactopus/<label>/`, with the
   profile that writes to the source's database.
 - The models library v0.9.0 or later: an earlier one has no labels, and

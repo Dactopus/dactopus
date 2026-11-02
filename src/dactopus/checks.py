@@ -23,7 +23,7 @@ from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
 from . import library
-from .build import dbt_error, misdated, target, title, union_key
+from .build import dbt_error, misdated, one_line, target, title, union_key
 from .config import Config, Source
 
 Severity = Literal["pass", "skip", "warn", "fail", "error"]
@@ -46,8 +46,8 @@ class Finding:
     expected: str
     # One sentence a store owner can read.
     sentence: str
-    # The label of the source the finding is about; None for one about the
-    # installation as a whole.
+    # The label of the source the finding is about, or the name of a union
+    # ("the commerce union"); None for one about the installation as a whole.
     source: str | None = None
 
 
@@ -152,7 +152,7 @@ def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], label: str) -
     kind = unique_id.split(".", 1)[0]
     status = result["status"]
     severity = _STATUS.get(status, "error")
-    message = _one_line(result.get("message") or status)
+    message = one_line((result.get("message") or status).splitlines())
     failures = result.get("failures")
     observed = status if failures is None else f"{failures} rows"
     if kind == "model":
@@ -248,12 +248,6 @@ def _test_finding(
         "skip": f"{_cap(where)} did not run because an earlier step failed.",
     }.get(severity, f"{_cap(where)} could not run: {message}")
     return Finding("dbt", obj, severity, observed, "0 rows", sentence)
-
-
-def _one_line(message: str) -> str:
-    """dbt's message in one line: without the macros that called the failing one."""
-    lines = [line.strip() for line in message.splitlines()]
-    return " ".join(line for line in lines if line and not line.startswith(">"))
 
 
 def _cap(text: str) -> str:

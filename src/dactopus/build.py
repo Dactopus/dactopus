@@ -172,8 +172,13 @@ def _error(lines: list[str]) -> str:
     text = [_TIME.sub("", _COLOUR.sub("", line)).rstrip() for line in lines]
     starts = [i for i, line in enumerate(text) if line.strip() == "Encountered an error:"]
     found = text[starts[-1] + 1 :] if starts else text[-5:]
-    kept = [line.strip() for line in found if line.strip() and not line.strip().startswith(">")]
-    return " ".join(kept) or "no output"
+    return one_line(found) or "no output"
+
+
+def one_line(lines: list[str]) -> str:
+    """dbt's error in one line: without the macros that called the failing one."""
+    kept = (line.strip() for line in lines)
+    return " ".join(line for line in kept if line and not line.startswith(">"))
 
 
 def _run(config: Config, library: Path, label: str, *dbt_args: str, writes: str) -> None:
