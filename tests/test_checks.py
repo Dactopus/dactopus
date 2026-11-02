@@ -452,6 +452,36 @@ def test_a_package_without_a_time_zone_counts_to_its_latest_day(tmp_path, monkey
     assert events.latest == date(2026, 10, 21)
 
 
+class _Tables:
+    """A _Client for each table, by the table's name in the query."""
+
+    def __init__(self, **clients):
+        self.clients = clients
+
+    def query(self, sql, parameters=None):
+        [client] = [c for name, c in self.clients.items() if f"`{name}`" in sql]
+        return client.query(sql, parameters)
+
+
+def test_the_tables_of_a_source_without_a_time_zone_share_its_week(tmp_path, monkeypatch):
+    """The last purchase two days before the last events: those two days have none."""
+    cfg = _config(tmp_path, "ga4")
+    _declare(
+        monkeypatch,
+        library.Daily("events", "event_date", gap=True),
+        library.Daily("purchases", "purchase_date"),
+    )
+    latest = date(2026, 11, 1)
+    client = _Tables(
+        events=_Client(_daily(latest, 60)),
+        purchases=_Client(_daily(latest - timedelta(days=2), 58)),
+    )
+    events, purchases = checks.volumes(client, cfg, NOW)
+    assert events.latest == purchases.latest == latest
+    assert list(purchases.days) == list(events.days)
+    assert [purchases.days[latest - timedelta(days=i)] for i in range(3)] == [0, 0, 10]
+
+
 def test_a_package_with_a_time_zone_variable_has_the_source_days(tmp_path, monkeypatch):
     cfg = _config(tmp_path, zone="Asia/Tokyo")
     _declare(monkeypatch, library.Daily("orders", "order_date", gap=True), time_zone="store_zone")

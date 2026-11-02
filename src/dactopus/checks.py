@@ -417,7 +417,7 @@ def volumes(client: Client, config: Config, at: datetime) -> list[Volume]:
     found: list[Volume] = []
     for label, source in config.sources.items():
         declared = _deployment(config, source)
-        last = _last_day(source, declared, at)
+        last = _last_day(client, source, declared, at)
         for counted in declared.daily:
             table = counted.table
             try:
@@ -431,30 +431,48 @@ def _deployment(config: Config, source: Source) -> library.Deployment:
     return library.deployment(config.models, library.resolve(config.models), source.package)
 
 
-def _last_day(source: Source, declared: library.Deployment, at: datetime) -> date | None:
-    """Yesterday in the source's zone; None for a source whose days are all over.
+def _last_day(
+    client: Client, source: Source, declared: library.Deployment, at: datetime
+) -> date | None:
+    """The day a source's week ends at, the same for each of its tables.
 
-    A package without a time zone variable has days that end where its
-    source says (GA4 is read in daily tables, each a day that is over). A
-    package with one is built in the source's zone, and its day is over at
-    midnight there.
+    A package with a time zone variable is built in the source's zone, and
+    its day is over at midnight there: yesterday. One without has days that
+    end where its source says (GA4 is read in daily tables, each a day that
+    is over): the latest day of any of its tables, so a day without a
+    purchase is a day without rows, not the end of another week. None when
+    no table has rows or can be read.
     """
-    if "time_zone" not in declared.vars:
-        return None
-    return at.astimezone(ZoneInfo(source.timezone)).date() - timedelta(days=1)
+    if "time_zone" in declared.vars:
+        return at.astimezone(ZoneInfo(source.timezone)).date() - timedelta(days=1)
+    latest = None
+    for counted in declared.daily:
+        try:
+            rows, _, last = _span(client, source.database, counted.table, counted.date)
+        except ClickHouseError:
+            continue
+        if rows and (latest is None or last > latest):
+            latest = last
+    return latest
 
 
 def _first_line(exc: Exception) -> str:
     return str(exc).splitlines()[0]
 
 
+def _span(client: Client, database: str, table: str, column: str) -> tuple[int, date, date]:
+    """The rows of a daily table, and its first and latest day."""
+    rows, first, latest = client.query(
+        f"SELECT count(), min(`{column}`), max(`{column}`) FROM `{database}`.`{table}`"
+    ).result_rows[0]
+    return int(rows), first, latest
+
+
 def _volume(
     client: Client, database: str, label: str, table: str, column: str, last: date | None
 ) -> Volume:
     qualified = f"`{database}`.`{table}`"
-    rows, first, latest = client.query(
-        f"SELECT count(), min(`{column}`), max(`{column}`) FROM {qualified}"
-    ).result_rows[0]
+    rows, first, latest = _span(client, database, table, column)
     if not rows:
         return Volume(label, table, None, None, {}, {})
     end = latest if last is None else last
@@ -486,7 +504,7 @@ def rows_per_day(client: Client, config: Config) -> list[Finding]:
     at = now()
     for label, source in config.sources.items():
         declared = _deployment(config, source)
-        last = _last_day(source, declared, at)
+        last = _last_day(client, source, declared, at)
         for counted in declared.daily:
             if not counted.gap:
                 continue
