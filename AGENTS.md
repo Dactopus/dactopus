@@ -29,15 +29,15 @@ introduce text in any other language, even in examples or fixtures.
 In scope:
 
 - One configuration file per installation: the ClickHouse connection and
-  the user `serve` connects as, the databases for raw input and canonical
-  tables, the store's time zone, the version of the models
-  library, the packages to run and their parameters.
+  the user `serve` connects as, the name the installation's databases
+  start with, its time zone, the version of the models library, and the
+  sources, each under a label with its package, zone and parameters.
 - Loading GA4: the BigQuery export, read with the Storage Read API, into
   the GA4 package's input table.
 - Loading Shopify: orders with lines, shipping and refunds, and the
   products with their deletions, read page by page from the GraphQL
   Admin API, into the Shopify package's input tables.
-- Running the packages with dbt.
+- Running the packages and the unions with dbt.
 - Checks behind a plugin interface, built-in checks, and one report a
   store owner can read.
 - Serving the models over MCP, as a thin call to dactopus-ossie-clickhouse.
@@ -72,12 +72,12 @@ Out of scope, do not build:
   in the library, never patched around in the runner.
 - The runner knows a package only by its `input.sql` and its
   `sources/<package>/deployment.yml`: the Ossie model its tables serve,
-  the dbt variables that take the input database and the time zone, and
-  the tables counted per day. A union, by its
+  the dbt variables that take the input database, the label and the
+  time zone, and the tables counted per day. A union, by its
   `unions/<union>/deployment.yml`: the model it serves and the dbt
   variable that takes the databases of its sources. A variable, table,
-  column or model file
-  name of a package never appears in the runner's code. Two exceptions:
+  column or model file name of a package or a union never appears in
+  the runner's code. Two exceptions:
   the loaders, which write the tables `input.sql` defines (the GA4
   loader also rereads as many days as the package's
   `ga4_lookback_days`), and the commented sample `init` writes.
@@ -130,9 +130,12 @@ The models library is not a Python package. The configuration names a
 version (`models.version`: a release tag, fetched as the GitHub archive
 of the tag into `~/.cache/dactopus/`, no git needed) or a path
 (`models.path`, for development). Packages run one at a time with
-`dbt build --project-dir <library>/sources/<package>`, with a profile
-the runner writes; the package names it (`profile: dactopus`). Packages
-do not depend on each other; no root dbt project is generated.
+`dbt build --project-dir <library>/sources/<package>`, one per source,
+then each union that has sources with `--project-dir
+<library>/unions/<union>`, with a profile the runner writes; the package
+names it (`profile: dactopus`). Packages do not depend on each other; a
+union reads the databases of its sources; no root dbt project is
+generated.
 
 ## Architecture rules
 
@@ -159,11 +162,12 @@ do not depend on each other; no root dbt project is generated.
 - A check is a named object that takes a ClickHouse connection and the
   installation's configuration and returns findings. A finding has one
   shape for built-in and plugin checks alike: check, object, severity,
-  observed, expected, and a sentence for the owner. Checks register
+  observed, expected, a sentence for the owner, and optionally the
+  source it is about (a label, or a union's name). Checks register
   through Python entry points; built-in ones are dbt test results (from
   `target/run_results.json` with `manifest.json` for the test's kind,
   column and parameters), input freshness, rows per day, and the time
-  zone of the daily tables against `store.timezone`. The report
+  zone of the daily tables against the source's zone. The report
   is Markdown, to the terminal and to a file, three answers first (how
   fresh the data is; whether every check passed and which did not, in
   words; volumes per day this week against past weeks), details below.
