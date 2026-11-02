@@ -267,9 +267,9 @@ def test_a_refused_products_query_names_the_scope(monkeypatch):
 
 def test_missing_app_secret_is_named():
     package = Shopify(
-        label="shop", shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET"
+        label="main_store", shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET"
     )
-    with pytest.raises(shopify.LoadError, match="SECRET of sources.shop is not set"):
+    with pytest.raises(shopify.LoadError, match="SECRET of sources.main_store is not set"):
         shopify.access_token(package, environ={"ID": "x"})
 
 
@@ -289,7 +289,9 @@ def test_unreachable_store_says_run_again(monkeypatch):
 # than 2026-10; the runner's own 2026-10 request read the same zone that day.
 SHOP_ZONE = {"data": {"shop": {"ianaTimezone": "America/New_York"}}}
 
-SHOP = Shopify(label="shop", shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET")
+SHOP = Shopify(
+    label="main_store", shop="dactopus-dev", client_id_env="ID", client_secret_env="SECRET"
+)
 
 
 def _check_zone(zone, setting="timezone"):
@@ -321,12 +323,12 @@ def test_the_shop_time_zone_is_known_without_the_machine_database(monkeypatch, n
 def test_another_time_zone_than_the_shop_is_refused(monkeypatch):
     monkeypatch.setattr(shopify, "_post", lambda url, data, headers: SHOP_ZONE)
     with pytest.raises(shopify.LoadError) as refused:
-        _check_zone("Europe/Berlin", "sources.shop.timezone")
+        _check_zone("Europe/Berlin", "sources.main_store.timezone")
     assert str(refused.value) == (
-        "shop: the time zone of dactopus-dev.myshopify.com is America/New_York, and the "
-        "source's is Europe/Berlin (from sources.shop.timezone); set sources.shop.timezone to "
-        "America/New_York, the shop's (Settings > General in the Shopify admin). Nothing has "
-        "been loaded yet."
+        "main_store: the time zone of dactopus-dev.myshopify.com is America/New_York, and the "
+        "source's is Europe/Berlin (from sources.main_store.timezone); set "
+        "sources.main_store.timezone to America/New_York, the shop's (Settings > General in the "
+        "Shopify admin). Nothing has been loaded yet."
     )
 
 

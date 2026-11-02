@@ -78,19 +78,19 @@ def test_each_source_builds_into_its_own_database_with_its_own_output(tmp_path):
         "input_database": "shopify_raw",
         "vars": {"shopify_lookback_days": 5},
     }
-    cfg = _config(tmp_path, label="shop_eu", source=source)
-    argv, _ = build.command(cfg, _library(tmp_path), "shop_eu")
+    cfg = _config(tmp_path, label="outlet_store", source=source)
+    argv, _ = build.command(cfg, _library(tmp_path), "outlet_store")
     assert json.loads(argv[argv.index("--vars") + 1]) == {
         "shopify_lookback_days": 5,
         "shopify_input_database": "shopify_raw",
-        "shopify_source_id": "shop_eu",
+        "shopify_source_id": "outlet_store",
         "shopify_timezone": "Europe/Berlin",
     }
-    output = cfg.workdir / "shop_eu"
+    output = cfg.workdir / "outlet_store"
     assert argv[argv.index("--target-path") + 1] == str(output / "target")
     assert argv[argv.index("--log-path") + 1] == str(output / "logs")
     profile = yaml.safe_load((output / "profiles.yml").read_text())
-    assert profile["dactopus"]["outputs"]["default"]["schema"] == "dactopus_shop_eu"
+    assert profile["dactopus"]["outputs"]["default"]["schema"] == "dactopus_outlet_store"
 
 
 def test_a_full_refresh_follows_build_on_the_command_line(tmp_path):

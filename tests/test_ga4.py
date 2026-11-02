@@ -209,12 +209,12 @@ def test_next_load_rereads_the_lookback_and_replaces_it(ga4_input):
 def test_lookback_from_configuration_or_package(tmp_path):
     (tmp_path / "sources/ga4").mkdir(parents=True)
     (tmp_path / "sources/ga4/dbt_project.yml").write_text("vars:\n  ga4_lookback_days: 3\n")
-    assert ga4.lookback_days("web", {"ga4_lookback_days": 5}, tmp_path) == 5
-    assert ga4.lookback_days("web", {}, tmp_path) == 3
+    assert ga4.lookback_days("website", {"ga4_lookback_days": 5}, tmp_path) == 5
+    assert ga4.lookback_days("website", {}, tmp_path) == 3
     with pytest.raises(
-        ga4.LoadError, match="sources.web.vars.ga4_lookback_days: expected a whole number"
+        ga4.LoadError, match="sources.website.vars.ga4_lookback_days: expected a whole number"
     ):
-        ga4.lookback_days("web", {"ga4_lookback_days": "x"}, tmp_path)
+        ga4.lookback_days("website", {"ga4_lookback_days": "x"}, tmp_path)
 
 
 def test_gcloud_login_has_the_configured_project_pay(monkeypatch):
@@ -222,7 +222,9 @@ def test_gcloud_login_has_the_configured_project_pay(monkeypatch):
     from google.oauth2.credentials import Credentials
 
     monkeypatch.setattr(google.auth, "default", lambda scopes: (Credentials("t"), None))
-    package = GA4(label="web", project="dactopus-ga4-sample", dataset="a.b", credentials_file=None)
+    package = GA4(
+        label="website", project="dactopus-ga4-sample", dataset="a.b", credentials_file=None
+    )
     credentials, account = ga4.credentials_for(package, environ={})
     assert credentials.quota_project_id == "dactopus-ga4-sample"
     assert account == "the gcloud application-default login"
@@ -235,7 +237,7 @@ def test_key_from_the_environment_is_named(monkeypatch):
         service_account_email = "reader@other-project.iam.gserviceaccount.com"
 
     monkeypatch.setattr(google.auth, "default", lambda scopes: (Key(), "other-project"))
-    package = GA4(label="web", project="p", dataset="a.b", credentials_file=None)
+    package = GA4(label="website", project="p", dataset="a.b", credentials_file=None)
     _, account = ga4.credentials_for(package, environ={"GOOGLE_APPLICATION_CREDENTIALS": "k"})
     assert "reader@other-project" in account
     assert "from GOOGLE_APPLICATION_CREDENTIALS; unset it" in account

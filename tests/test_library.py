@@ -186,8 +186,8 @@ def test_declared_vars_pass(tmp_path):
 def test_input_database_variable_is_reserved(tmp_path):
     with pytest.raises(
         ConfigError,
-        match="sources.web.vars: remove ga4_input_database; the runner sets it from "
-        "sources.web.input_database or clickhouse.database",
+        match="sources.website.vars: remove ga4_input_database; the runner sets it from "
+        "sources.website.input_database or clickhouse.database",
     ):
         _check(tmp_path, "ga4_lookback_days: 3", "ga4_input_database: other")
 
@@ -195,7 +195,7 @@ def test_input_database_variable_is_reserved(tmp_path):
 def test_label_variable_is_reserved(tmp_path):
     with pytest.raises(
         ConfigError,
-        match="sources.web.vars: remove ga4_source_id; the runner sets it from the label",
+        match="sources.website.vars: remove ga4_source_id; the runner sets it from the label",
     ):
         _check(tmp_path, "ga4_lookback_days: 3", "ga4_source_id: other")
 
@@ -203,8 +203,8 @@ def test_label_variable_is_reserved(tmp_path):
 def test_time_zone_variable_is_reserved(tmp_path):
     with pytest.raises(
         ConfigError,
-        match="sources.shop.vars: remove shopify_timezone; the runner sets it from "
-        "sources.shop.timezone or timezone",
+        match="sources.main_store.vars: remove shopify_timezone; the runner sets it from "
+        "sources.main_store.timezone or timezone",
     ):
         _check(
             tmp_path,

@@ -431,7 +431,7 @@ models:
 #     (CDC) writes.
 #   vars: dbt variables of the package, passed as they are.
 sources:
-  web:
+  website:
     package: ga4
     # The Google Cloud project the read sessions run in; reading is billed to it.
     project: my-project
@@ -443,7 +443,7 @@ sources:
     vars:
       ga4_lookback_days: 3
 
-  shop:
+  main_store:
     package: shopify
     # The store, as in <shop>.myshopify.com.
     shop: my-store
@@ -453,7 +453,7 @@ sources:
 
   # A WooCommerce store, its tables replicated into ClickHouse by CDC (PeerDB,
   # ClickPipes); the runner builds, checks and serves it, and loads nothing.
-  # woo_eu:
+  # europe_store:
   #   package: woocommerce
   #   timezone: Europe/Berlin
   #   input_database: woocommerce_raw
