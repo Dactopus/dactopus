@@ -5,6 +5,7 @@ model: entities/commerce.yaml
 # A role, and the dbt variable (dbt_project.yml) that plays it.
 vars:
   input_database: shopify_input_database
+  source_id: shopify_source_id
   time_zone: shopify_timezone
 # The built tables a deployment counts rows per day in, by `date`, a Date
 # column. `time` is the column whose day `date` is, in the zone of

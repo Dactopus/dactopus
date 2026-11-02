@@ -19,7 +19,7 @@ def _config(tmp_path):
                     "database": "canonical",
                 },
                 "store": {"timezone": "UTC"},
-                "models": {"version": "v0.8.0"},
+                "models": {"version": "v0.9.0"},
                 "packages": {"shopify": {"shop": "s"}},
             }
         )

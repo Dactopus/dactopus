@@ -314,7 +314,9 @@ store:
 
 models:
   # A release of dactopus-data-models, downloaded once into ~/.cache/dactopus.
-  version: v0.8.0
+  # When a release changes a model's columns (its changelog says so), run
+  # `dactopus run --full-refresh` once after changing it.
+  version: v0.9.0
   # Or a checkout of the library, for development:
   # path: ../dactopus-data-models
 

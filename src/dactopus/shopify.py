@@ -2,8 +2,8 @@
 Shopify package's input tables.
 
 The queries and the mapping are those of export_shopify.py in the README of
-dactopus-data-models ("Your store"), so the rows are the ones its recipe
-loads. Bulk operations cannot read refund lines, so orders come in pages.
+the Shopify package of dactopus-data-models ("Your store"), so the rows are
+the ones its recipe loads. Bulk operations cannot read refund lines, so orders come in pages.
 A deleted product is gone from the API; the store's events name it, and
 the load appends a version with only its id and the time of the deletion.
 """

@@ -183,7 +183,7 @@ def test_a_refund_keeps_the_date_it_was_processed(shopify_input):
 
 
 def _recipe_script(library: Path) -> str:
-    readme = (library / "README.md").read_text()
+    readme = (library / "sources/shopify/README.md").read_text()
     block = readme.split("<summary>export_shopify.py</summary>", 1)[1]
     code = re.search(r"```python\n(.*?)```", block, re.S).group(1)
     return "\n".join(line.removeprefix("   ") for line in code.splitlines())
