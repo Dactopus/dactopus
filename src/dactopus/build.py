@@ -147,12 +147,17 @@ def _run(config: Config, library: Path, label: str, *dbt_args: str, writes: str)
     apart. Failures are read from that file by the checks; a run that could
     not run leaves its step and dbt's error next to it, for the checks too.
     """
-    argv, env = command(config, library, label, *dbt_args)
     written = target(config, label) / writes
     failed = failure(config, label, writes)
     written.unlink(missing_ok=True)
     failed.unlink(missing_ok=True)
     step = f"dbt {' '.join(dbt_args)}"
+    try:
+        argv, env = command(config, library, label, *dbt_args)
+    except BuildError as exc:
+        failed.parent.mkdir(parents=True, exist_ok=True)
+        failed.write_text(f"{step}\n{exc}\n")
+        raise
     print(f"build: {step} of {label}", file=sys.stderr)
     # dbt prints its own progress, passed on as it comes; the password is
     # only in the environment.
@@ -167,6 +172,9 @@ def _run(config: Config, library: Path, label: str, *dbt_args: str, writes: str)
             lines.append(line)
     if process.returncode not in (0, 1) or not written.exists():
         message = _error(list(lines))
+        # What dbt wrote before it stopped is not a run's results: the
+        # checks report the error instead.
+        written.unlink(missing_ok=True)
         failed.write_text(f"{step}\n{message}\n")
         raise BuildError(
             f"build: {step} of {label} could not run (exit {process.returncode}): {message} "
