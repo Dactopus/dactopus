@@ -190,3 +190,18 @@ def test_a_source_in_another_zone_than_the_installation_says_so(tmp_path):
         'Its days are in Europe/Berlin; "today" in an agent\'s question is the date in UTC.'
     )
     assert lines[lines.index("### main_store") + 2].startswith("The last 7 days")
+
+
+def test_a_union_is_named_in_words(tmp_path):
+    """A union's key (union-commerce) is for programs; the owner reads its name."""
+    cfg = _config(tmp_path)
+    failed = Finding(
+        "dbt", "orders", "fail", "2 rows", "0 rows", "2 orders repeat.", "union-commerce"
+    )
+    lines = report.render(cfg, [FRESH, OK, failed], [], NOW).splitlines()
+    assert "- fail: the commerce union: 2 orders repeat." in lines
+    details = lines[lines.index("## Details") :]
+    assert [line for line in details if line.startswith("### ")] == [
+        "### main_store",
+        "### the commerce union",
+    ]

@@ -693,7 +693,7 @@ def test_a_union_without_a_run_is_an_error(tmp_path):
     cfg = _config(tmp_path)
     _target(cfg, run_results="run_results_build_pass.json")
     [error] = [f for f in checks.dbt_results(None, cfg) if f.severity == "error"]
-    assert (error.source, error.object) == ("the commerce union", "the commerce union")
+    assert (error.source, error.object) == ("union-commerce", "the commerce union")
     assert error.sentence == "The union has not been built yet: run `dactopus run`."
 
 
@@ -702,5 +702,5 @@ def test_a_union_with_a_run_shows_its_results_under_its_name(tmp_path):
     _target(cfg, run_results="run_results_build_pass.json")
     _target(cfg, label="union-commerce", run_results="run_results_build_pass.json")
     found = checks.dbt_results(None, cfg)
-    assert {f.source for f in found} == {"shopify", "the commerce union"}
+    assert {f.source for f in found} == {"shopify", "union-commerce"}
     assert not any(f.severity == "error" for f in found)

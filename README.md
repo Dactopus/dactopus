@@ -213,7 +213,8 @@ A check is a function of a ClickHouse client and the configuration that
 returns findings; a finding names the check, the object, a severity
 (`pass`, `skip`, `warn`, `fail`, `error`), what was observed, what was
 expected, one sentence for the store owner, and optionally the source it
-is about (`source`: a label, or a union's name). A package registers a check
+is about (`source`: a label, or `union-<name>` for a union, such as
+`union-commerce`). A package registers a check
 through the entry point group `dactopus.checks`; the entry point's name is
 the check's name, and a check that raises becomes an `error` finding
 without stopping the others:

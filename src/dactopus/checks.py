@@ -46,8 +46,8 @@ class Finding:
     expected: str
     # One sentence a store owner can read.
     sentence: str
-    # The label of the source the finding is about, or the name of a union
-    # ("the commerce union"); None for one about the installation as a whole.
+    # The label of the source the finding is about, or union-<name> for a
+    # union (union-commerce); None for one about the installation as a whole.
     source: str | None = None
 
 
@@ -137,13 +137,13 @@ def dbt_results(client: Client, config: Config) -> list[Finding]:
                     observed="no dbt results" if error is None else f"{step} could not run",
                     expected=f"a dbt run of the {noun}",
                     sentence=sentence,
-                    source=label,
+                    source=key,
                 )
             )
             continue
         for result in results["results"]:
             if result["status"] != _NOT_RUN:
-                findings.append(replace(_dbt_finding(result, manifest, label), source=label))
+                findings.append(replace(_dbt_finding(result, manifest, label), source=key))
     return findings
 
 

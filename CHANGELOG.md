@@ -37,8 +37,8 @@ a minor release may change the command line and the configuration file.
 - The unions of the models library: `dactopus run` builds each union
   that has sources after the sources, as views in `clickhouse.database`
   over the databases of its sources, and `dactopus check` tests them.
-  Their findings are grouped under the union's name ("the commerce
-  union"), which is their `source`.
+  Their findings have `union-<name>` as their `source` (`union-commerce`),
+  and the report names the union in words ("the commerce union").
 
 ### Changed
 

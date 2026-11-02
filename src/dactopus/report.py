@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
+from .build import title
 from .checks import PAST_WEEKS, SEVERITIES, Finding, Volume
 from .config import Config
 
@@ -127,7 +128,7 @@ def _details(config: Config, findings: list[Finding]) -> list[str]:
     )
     for group in groups:
         own = [f for f in findings if f.source == group]
-        lines.append(f"### {group or 'The installation'}")
+        lines.append(f"### {'The installation' if group is None else title(group)}")
         lines.append("")
         for check in dict.fromkeys(f.check for f in own):
             lines.append(f"#### {check}")
@@ -146,4 +147,4 @@ def _mark(severity: str) -> str:
 
 
 def _label(finding: Finding) -> str:
-    return "" if finding.source is None else f"{finding.source}: "
+    return "" if finding.source is None else f"{title(finding.source)}: "
