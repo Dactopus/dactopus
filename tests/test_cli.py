@@ -43,7 +43,7 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
 
 
 def _sample(tmp_path, library=FIXTURE_LIBRARY):
-    """The sample configuration (GA4 as web, Shopify as shop) over a library checkout."""
+    """The sample configuration (GA4 as website, Shopify as main_store) over a library checkout."""
     assert "version: v0.9.0" in config.SAMPLE
     path = tmp_path / "dactopus.yaml"
     path.write_text(config.SAMPLE.replace("version: v0.9.0", f"path: {library}"))
@@ -59,7 +59,7 @@ def test_vars_are_checked_against_the_library_before_connecting(
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
     monkeypatch.setattr(cli.serve, "serve", lambda cfg, root: pytest.fail("served"))
     assert main([command, "--config", str(path)]) == 1
-    assert "sources.web.vars: remove ga4_input_database" in capsys.readouterr().err
+    assert "sources.website.vars: remove ga4_input_database" in capsys.readouterr().err
 
 
 def test_a_library_before_labels_names_the_release(tmp_path, capsys):
@@ -86,7 +86,9 @@ def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli.clickhouse, "create_input", refuse)
     assert main(["run", "--config", str(path)]) == 1
     err = capsys.readouterr().err
-    assert "web: creating the input tables in dactopus_web_raw: ClickHouse refused it" in err
+    assert (
+        "website: creating the input tables in dactopus_website_raw: ClickHouse refused it" in err
+    )
     assert "Not enough privileges" in err
     assert "run again" in err
 
@@ -115,8 +117,8 @@ def test_a_refused_count_of_the_days_says_nothing_was_loaded(tmp_path, monkeypat
     [
         (["run"], None),
         (["run", "--full-refresh"], []),
-        (["run", "--full-refresh", "shop"], ["shop"]),
-        (["run", "--full-refresh", "web", "shop"], ["web", "shop"]),
+        (["run", "--full-refresh", "main_store"], ["main_store"]),
+        (["run", "--full-refresh", "website", "main_store"], ["website", "main_store"]),
     ],
 )
 def test_run_parses_the_full_refresh_flag(argv, names):
@@ -133,8 +135,8 @@ def test_only_run_takes_the_full_refresh_flag(command):
 def test_full_refresh_names_the_sources_to_rebuild(tmp_path):
     cfg = config.load(_sample(tmp_path))
     assert cli.full_refresh(None, cfg) == set()
-    assert cli.full_refresh([], cfg) == {"web", "shop"}
-    assert cli.full_refresh(["shop"], cfg) == {"shop"}
+    assert cli.full_refresh([], cfg) == {"website", "main_store"}
+    assert cli.full_refresh(["main_store"], cfg) == {"main_store"}
 
 
 def test_full_refresh_of_an_unknown_label_is_refused_before_anything_runs(
@@ -145,7 +147,7 @@ def test_full_refresh_of_an_unknown_label_is_refused_before_anything_runs(
     assert main(["run", "--config", str(path), "--full-refresh", "shopify"]) == 1
     assert (
         "dactopus run: --full-refresh: shopify not in the configuration; "
-        "configured: web, shop." in capsys.readouterr().err
+        "configured: website, main_store." in capsys.readouterr().err
     )
 
 
@@ -184,7 +186,7 @@ def test_run_loads_only_the_sources_it_has_a_loader_for(tmp_path, monkeypatch):
     path = _sample(tmp_path)
     text = path.read_text()
     lines = text.splitlines()
-    at = lines.index("  # woo_eu:")
+    at = lines.index("  # europe_store:")
     path.write_text(
         "\n".join([*lines[:at], *(line.replace("  # ", "  ", 1) for line in lines[at:])])
     )
@@ -192,15 +194,15 @@ def test_run_loads_only_the_sources_it_has_a_loader_for(tmp_path, monkeypatch):
     _stub_run(monkeypatch, steps)
     assert main(["run", "--config", str(path)]) == 0
     assert [step for step in steps if step[0] in ("input", "load")] == [
-        ("input", "ga4", "dactopus_web_raw"),
-        ("load", "ga4", "dactopus_web_raw"),
-        ("input", "shopify", "dactopus_shop_raw"),
-        ("load", "shopify", "dactopus_shop_raw", "shop"),
+        ("input", "ga4", "dactopus_website_raw"),
+        ("load", "ga4", "dactopus_website_raw"),
+        ("input", "shopify", "dactopus_main_store_raw"),
+        ("load", "shopify", "dactopus_main_store_raw", "main_store"),
     ]
     assert [step for step in steps if step[0] == "build"] == [
-        ("build", "web", False),
-        ("build", "shop", False),
-        ("build", "woo_eu", False),
+        ("build", "website", False),
+        ("build", "main_store", False),
+        ("build", "europe_store", False),
     ]
 
 
@@ -209,16 +211,16 @@ def test_run_rebuilds_the_named_sources_after_the_usual_load(tmp_path, monkeypat
     path = _sample(tmp_path)
     steps = []
     _stub_run(monkeypatch, steps)
-    assert main(["run", "--config", str(path), "--full-refresh", "shop"]) == 0
+    assert main(["run", "--config", str(path), "--full-refresh", "main_store"]) == 0
     assert steps == [
         ("shop zone", "UTC", "timezone"),
-        ("zone", {"shop"}),
-        ("input", "ga4", "dactopus_web_raw"),
-        ("load", "ga4", "dactopus_web_raw"),
-        ("input", "shopify", "dactopus_shop_raw"),
-        ("load", "shopify", "dactopus_shop_raw", "shop"),
-        ("build", "web", False),
-        ("build", "shop", True),
+        ("zone", {"main_store"}),
+        ("input", "ga4", "dactopus_website_raw"),
+        ("load", "ga4", "dactopus_website_raw"),
+        ("input", "shopify", "dactopus_main_store_raw"),
+        ("load", "shopify", "dactopus_main_store_raw", "main_store"),
+        ("build", "website", False),
+        ("build", "main_store", True),
     ]
 
 
@@ -263,7 +265,7 @@ def test_check_builds_the_report_over_the_library_fixtures(
     try:
         for source in cfg.sources.values():
             _fixture(client, models_library, source.package, source.input_database)
-        raw = cfg.sources["shop"].input_database
+        raw = cfg.sources["main_store"].input_database
         client.command(
             f"ALTER TABLE `{raw}`.orders UPDATE loaded_at = now64(6) WHERE 1 "
             "SETTINGS mutations_sync = 2"
@@ -276,8 +278,8 @@ def test_check_builds_the_report_over_the_library_fixtures(
     out = capsys.readouterr()
     text = (cfg.workdir / "report.md").read_text()
     assert text in out.out
-    assert "- shop: The input is current" in text
-    assert "error: web: No new rows of events" in text
+    assert "- main_store: The input is current" in text
+    assert "error: website: No new rows of events" in text
     assert "- fail:" not in text
     assert "| Day | events | sessions | purchases |" in text
     assert "| Day | orders | refunds |" in text
@@ -291,7 +293,7 @@ def _rows(client, database, table):
 def test_full_refresh_rebuilds_the_named_package_from_the_input(
     clickhouse, models_library, sample, tmp_path, monkeypatch
 ):
-    """`run --full-refresh shop` over the library fixtures, with the loads stubbed out.
+    """`run --full-refresh main_store` over the library fixtures, with the loads stubbed out.
 
     Shopify is rebuilt with `--full-refresh` and GA4 is not; the rebuilt
     tables equal, row for row, those of the incremental run before.
@@ -311,8 +313,8 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
     monkeypatch.setattr(cli.shopify, "graphql", lambda shop, token: object())
     monkeypatch.setattr(cli.shopify, "load", lambda *args: None)
     tables = {
-        "web": ("events", "sessions", "purchases"),
-        "shop": ("orders", "order_lines", "refunds", "sales_events"),
+        "website": ("events", "sessions", "purchases"),
+        "main_store": ("orders", "order_lines", "refunds", "sales_events"),
     }
 
     def rows():
@@ -329,7 +331,7 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
             for label in tables:
                 build.build(cfg, models_library, label)
         before = rows()
-        main(["run", "--config", str(path), "--full-refresh", "shop"])
+        main(["run", "--config", str(path), "--full-refresh", "main_store"])
         after = rows()
         args = {
             label: json.loads((build.target(cfg, label) / "run_results.json").read_text())["args"]
@@ -337,8 +339,8 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
         }
     finally:
         _drop(client, database)
-    assert args["shop"]["full_refresh"] is True
-    assert "full_refresh" not in args["web"]
+    assert args["main_store"]["full_refresh"] is True
+    assert "full_refresh" not in args["website"]
     assert all(before[t] for t in before)
     assert after == before
 
@@ -351,13 +353,14 @@ def test_a_source_dbt_cannot_build_does_not_stop_the_others(tmp_path, monkeypatc
 
     def build(cfg, root, label, full_refresh):
         steps.append(("build", label))
-        if label == "web":
-            raise cli.build.BuildError("build: dbt build of web could not run (exit 2): no.")
+        if label == "website":
+            raise cli.build.BuildError("build: dbt build of website could not run (exit 2): no.")
 
     monkeypatch.setattr(cli.build, "build", build)
     monkeypatch.setattr(cli, "_report", lambda cfg, root, client: steps.append("report") or 1)
     assert main(["run", "--config", str(path)]) == 1
-    assert steps[-3:] == [("build", "web"), ("build", "shop"), "report"]
+    assert steps[-3:] == [("build", "website"), ("build", "main_store"), "report"]
     assert (
-        "dactopus: build: dbt build of web could not run (exit 2): no." in capsys.readouterr().err
+        "dactopus: build: dbt build of website could not run (exit 2): no."
+        in capsys.readouterr().err
     )

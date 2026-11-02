@@ -19,12 +19,12 @@ def _base() -> dict:
         "timezone": "America/New_York",
         "models": {"version": "v0.9.0"},
         "sources": {
-            "web": {
+            "website": {
                 "package": "ga4",
                 "project": "p",
                 "dataset": "bigquery-public-data.ga4_sample",
             },
-            "shop_us": {"package": "shopify", "shop": "dactopus-dev"},
+            "main_store": {"package": "shopify", "shop": "dactopus-dev"},
         },
     }
 
@@ -40,8 +40,8 @@ def test_sample_loads(tmp_path):
     assert loaded.clickhouse.database == "dactopus"
     assert loaded.models.version == "v0.9.0"
     assert [(s.label, s.package) for s in loaded.sources.values()] == [
-        ("web", "ga4"),
-        ("shop", "shopify"),
+        ("website", "ga4"),
+        ("main_store", "shopify"),
     ]
     assert loaded.workdir == tmp_path.resolve() / ".dactopus"
 
@@ -53,18 +53,18 @@ def test_sample_sets_the_installation_time_zone_and_no_source_one(tmp_path):
     assert loaded.timezone == "UTC"
     assert {s.timezone for s in loaded.sources.values()} == {"UTC"}
     assert not any(s.own_timezone for s in loaded.sources.values())
-    assert loaded.sources["shop"].vars == {}
+    assert loaded.sources["main_store"].vars == {}
     assert "dactopus run --full-refresh" in config.SAMPLE
 
 
 def test_the_commented_source_of_the_sample_loads(tmp_path):
     """The WooCommerce source the sample comments out is a working example."""
     lines = config.SAMPLE.splitlines()
-    at = lines.index("  # woo_eu:")
+    at = lines.index("  # europe_store:")
     text = "\n".join([*lines[:at], *(line.replace("  # ", "  ", 1) for line in lines[at:])])
     path = tmp_path / "dactopus.yaml"
     path.write_text(text)
-    woo = config.load(path, environ={}).sources["woo_eu"]
+    woo = config.load(path, environ={}).sources["europe_store"]
     assert (woo.package, woo.timezone, woo.input_database, woo.loader) == (
         "woocommerce",
         "Europe/Berlin",
@@ -76,24 +76,30 @@ def test_the_commented_source_of_the_sample_loads(tmp_path):
 
 def test_each_source_has_databases_under_the_prefix(tmp_path):
     loaded = _load(tmp_path, _base())
-    web, shop = loaded.sources["web"], loaded.sources["shop_us"]
-    assert (web.database, web.input_database) == ("dactopus_web", "dactopus_web_raw")
-    assert (shop.database, shop.input_database) == ("dactopus_shop_us", "dactopus_shop_us_raw")
+    website, store = loaded.sources["website"], loaded.sources["main_store"]
+    assert (website.database, website.input_database) == (
+        "dactopus_website",
+        "dactopus_website_raw",
+    )
+    assert (store.database, store.input_database) == (
+        "dactopus_main_store",
+        "dactopus_main_store_raw",
+    )
 
 
 def test_a_source_names_its_input_database_and_time_zone(tmp_path):
     data = _base()
-    data["sources"]["woo_eu"] = {
+    data["sources"]["europe_store"] = {
         "package": "woocommerce",
         "timezone": "Europe/Berlin",
         "input_database": "woocommerce_raw",
         "vars": {"woocommerce_currency": "EUR"},
     }
     loaded = _load(tmp_path, data)
-    woo = loaded.sources["woo_eu"]
-    assert (woo.database, woo.input_database) == ("dactopus_woo_eu", "woocommerce_raw")
+    woo = loaded.sources["europe_store"]
+    assert (woo.database, woo.input_database) == ("dactopus_europe_store", "woocommerce_raw")
     assert (woo.timezone, woo.own_timezone) == ("Europe/Berlin", True)
-    assert (loaded.sources["web"].timezone, loaded.sources["web"].own_timezone) == (
+    assert (loaded.sources["website"].timezone, loaded.sources["website"].own_timezone) == (
         "America/New_York",
         False,
     )
@@ -101,10 +107,10 @@ def test_a_source_names_its_input_database_and_time_zone(tmp_path):
 
 def test_loaders_belong_to_their_packages(tmp_path):
     loaded = _load(tmp_path, _base())
-    web, shop = loaded.sources["web"].loader, loaded.sources["shop_us"].loader
-    assert isinstance(web, config.GA4) and web.label == "web"
-    assert isinstance(shop, config.Shopify) and shop.label == "shop_us"
-    assert shop.client_id_env == "SHOPIFY_CLIENT_ID"
+    website, store = loaded.sources["website"].loader, loaded.sources["main_store"].loader
+    assert isinstance(website, config.GA4) and website.label == "website"
+    assert isinstance(store, config.Shopify) and store.label == "main_store"
+    assert store.client_id_env == "SHOPIFY_CLIENT_ID"
 
 
 @pytest.mark.parametrize(
@@ -115,9 +121,12 @@ def test_loaders_belong_to_their_packages(tmp_path):
         ({"Shop": {"package": "shopify", "shop": "s"}}, "the label 'Shop' is not 1 to 64"),
         ({"a" * 65: {"package": "shopify", "shop": "s"}}, "is not 1 to 64"),
         ({"shop-us": {"package": "shopify", "shop": "s"}}, "the label 'shop-us'"),
-        ({"shop": {"shop": "s"}}, "sources.shop.package: missing"),
-        ({"shop": {"package": "../x"}}, "sources.shop.package: '../x' is not a package"),
-        ({"shop": {"package": "shopify"}}, "sources.shop.shop: missing"),
+        ({"main_store": {"shop": "s"}}, "sources.main_store.package: missing"),
+        (
+            {"main_store": {"package": "../x"}},
+            "sources.main_store.package: '../x' is not a package",
+        ),
+        ({"main_store": {"package": "shopify"}}, "sources.main_store.shop: missing"),
         (
             {"woo": {"package": "woocommerce", "shop": "s"}},
             "sources.woo: unknown key shop; allowed: input_database, package, timezone, vars",
@@ -146,39 +155,41 @@ def test_sources_are_checked(tmp_path, sources, message):
 def test_a_canonical_database_is_no_input_database(tmp_path):
     """A label ending in _raw has the database another source's input defaults to."""
     data = _base()
-    data["sources"]["shop_us_raw"] = {"package": "woocommerce"}
+    data["sources"]["main_store_raw"] = {"package": "woocommerce"}
     with pytest.raises(
         ConfigError,
-        match="sources.shop_us: its input database dactopus_shop_us_raw"
-        " holds the canonical tables of shop_us_raw",
+        match="sources.main_store: its input database dactopus_main_store_raw"
+        " holds the canonical tables of main_store_raw",
     ):
         _load(tmp_path, data)
 
 
 def test_no_input_database_is_the_unions_database(tmp_path):
     data = _base()
-    data["sources"]["shop_us"]["input_database"] = "dactopus"
+    data["sources"]["main_store"]["input_database"] = "dactopus"
     with pytest.raises(ConfigError, match="its input database dactopus is clickhouse.database"):
         _load(tmp_path, data)
 
 
 def test_two_sources_of_one_package_do_not_share_an_input_database(tmp_path):
     data = _base()
-    data["sources"]["shop_us"]["input_database"] = "shopify_raw"
-    data["sources"]["shop_eu"] = {
+    data["sources"]["main_store"]["input_database"] = "shopify_raw"
+    data["sources"]["outlet_store"] = {
         "package": "shopify",
         "shop": "eu",
         "input_database": "shopify_raw",
     }
-    with pytest.raises(ConfigError, match="sources.shop_us: shop_eu reads the same input database"):
+    with pytest.raises(
+        ConfigError, match="sources.outlet_store: main_store reads the same input database"
+    ):
         _load(tmp_path, data)
 
 
 def test_sources_of_different_packages_may_share_an_input_database(tmp_path):
     """An installation of 0.2 keeps its input in one database (dactopus_raw)."""
     data = _base()
-    data["sources"]["web"]["input_database"] = "dactopus_raw"
-    data["sources"]["shop_us"]["input_database"] = "dactopus_raw"
+    data["sources"]["website"]["input_database"] = "dactopus_raw"
+    data["sources"]["main_store"]["input_database"] = "dactopus_raw"
     loaded = _load(tmp_path, data)
     assert {s.input_database for s in loaded.sources.values()} == {"dactopus_raw"}
 
