@@ -74,6 +74,11 @@ def _target(cfg, label="shopify", run_results=None, sources=None):
         (target / "sources.json").write_bytes((FIXTURES / sources).read_bytes())
 
 
+def _dbt(cfg):
+    """The dbt findings of the sources; the unions have their own tests."""
+    return [f for f in checks.dbt_results(None, cfg) if f.source in cfg.sources]
+
+
 def _count(findings):
     return {s: sum(1 for f in findings if f.severity == s) for s in checks.SEVERITIES}
 
@@ -85,7 +90,7 @@ def _sentences(findings, severity):
 def test_a_clean_build_passes_but_for_the_package_warning(tmp_path):
     cfg = _config(tmp_path)
     _target(cfg, run_results="run_results_build_pass.json")
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     assert _count(findings) == {"pass": 32, "skip": 0, "warn": 1, "fail": 0, "error": 0}
     assert {f.check for f in findings} == {"dbt"}
     assert _sentences(findings, "warn") == [
@@ -102,7 +107,7 @@ def test_a_clean_build_passes_but_for_the_package_warning(tmp_path):
 def test_failing_tests_become_sentences_with_counts(tmp_path):
     cfg = _config(tmp_path)
     _target(cfg, run_results="run_results_test_fail.json")
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     assert _count(findings) == {"pass": 25, "skip": 0, "warn": 1, "fail": 3, "error": 0}
     assert sorted(_sentences(findings, "fail")) == [
         "1 value of order_id appears in more than one row of orders.",
@@ -117,7 +122,7 @@ def test_failing_tests_become_sentences_with_counts(tmp_path):
 def test_a_build_stopped_by_a_failure_reports_what_did_not_run(tmp_path):
     cfg = _config(tmp_path)
     _target(cfg, run_results="run_results_build_skipped.json")
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     counted = _count(findings)
     assert counted["fail"] == 1 and counted["skip"] == 28
     assert "orders was not built because an earlier step failed." in _sentences(findings, "skip")
@@ -130,7 +135,7 @@ def test_a_build_stopped_by_a_failure_reports_what_did_not_run(tmp_path):
 def test_a_model_error_names_the_table_and_dbt_message(tmp_path):
     cfg = _config(tmp_path)
     _target(cfg, run_results="run_results_build_error.json")
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     [error] = [f for f in findings if f.severity == "error"]
     assert error.object == "orders"
     assert error.sentence.startswith("orders could not be built: Database Error in model orders")
@@ -139,7 +144,7 @@ def test_a_model_error_names_the_table_and_dbt_message(tmp_path):
 def test_a_model_whose_columns_changed_names_the_full_refresh(tmp_path):
     cfg = _config(tmp_path)
     _target(cfg, run_results="run_results_build_schema_change.json")
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     [error] = [f for f in findings if f.severity == "error"]
     assert error.object == "orders"
     assert error.sentence == (
@@ -159,7 +164,7 @@ def test_results_that_ran_nothing_are_left_out(tmp_path):
         {"unique_id": "exposure.dactopus_shopify.dashboard", "status": "no-op", "message": None}
     )
     (cfg.workdir / "shopify" / "target" / "run_results.json").write_text(json.dumps(results))
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     assert _count(findings) == {"pass": 32, "skip": 0, "warn": 1, "fail": 0, "error": 0}
 
 
@@ -173,7 +178,7 @@ def test_a_ref_in_double_quotes_names_the_table(tmp_path):
         if metadata.get("name") == "relationships":
             metadata["kwargs"]["to"] = 'ref("orders")'
     path.write_text(json.dumps(manifest))
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     assert "2 rows of order_lines have no matching order_id in orders." in _sentences(
         findings, "fail"
     )
@@ -182,7 +187,7 @@ def test_a_ref_in_double_quotes_names_the_table(tmp_path):
 def test_a_package_without_a_run_is_an_error(tmp_path):
     cfg = _config(tmp_path, "ga4", "shopify")
     _target(cfg, run_results="run_results_build_pass.json")
-    findings = checks.dbt_results(None, cfg)
+    findings = _dbt(cfg)
     [error] = [f for f in findings if f.severity == "error"]
     assert error.object == "ga4"
     assert "has not been built yet" in error.sentence
@@ -605,7 +610,10 @@ def test_every_finding_of_a_source_carries_its_label(tmp_path, monkeypatch):
     client = _Client(_daily(date(2026, 10, 20), 60))
     for check in (checks.dbt_results, checks.freshness, checks.rows_per_day, checks.time_zone):
         found = check(client, cfg)
-        assert {f.source for f in found} == {"ga4", "shopify"}, check.__name__
+        assert {f.source for f in found if f.source in cfg.sources} == {"ga4", "shopify"}, (
+            check.__name__
+        )
+        assert all(f.source for f in found), check.__name__
 
 
 def test_each_source_is_counted_in_its_own_database_and_zone(tmp_path, monkeypatch):
@@ -649,7 +657,7 @@ def test_a_source_dbt_could_not_build_shows_the_package_s_message(tmp_path):
     message = "Compilation Error in model events (models/events.sql) Set ga4_x."
     (cfg.workdir / "ga4" / "run_results.error").write_text(f"dbt build\n{message}\n")
     (cfg.workdir / "ga4" / "sources.error").write_text(f"dbt source freshness\n{message}\n")
-    [built] = [f for f in checks.dbt_results(None, cfg) if f.severity == "error"]
+    [built] = [f for f in _dbt(cfg) if f.severity == "error"]
     assert (built.source, built.object, built.observed) == ("ga4", "ga4", "dbt build could not run")
     assert built.sentence == f"dbt build of the source could not run: {message}"
     [fresh] = [f for f in checks.freshness(None, cfg) if f.source == "ga4"]
@@ -657,3 +665,42 @@ def test_a_source_dbt_could_not_build_shows_the_package_s_message(tmp_path):
     assert fresh.sentence == (
         f"The freshness of the input is unknown: dbt source freshness could not run: {message}"
     )
+
+
+def test_a_message_of_several_lines_is_one_sentence(tmp_path):
+    """A union that cannot be built says which release to build the sources with."""
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_error.json")
+    path = cfg.workdir / "shopify" / "target" / "run_results.json"
+    results = json.loads(path.read_text())
+    [bad] = [r for r in results["results"] if r["status"] == "error"]
+    bad["message"] = (
+        "Compilation Error in model orders (models/orders.sql)\n"
+        "  commerce_union_databases: a.orders.x is missing. Build each of the stores.\n"
+        "  \n"
+        "  > in macro union_view (macros/union.sql)\n"
+        "  > called by model orders (models/orders.sql)"
+    )
+    path.write_text(json.dumps(results))
+    [error] = [f for f in _dbt(cfg) if f.severity == "error"]
+    assert error.sentence == (
+        "orders could not be built: Compilation Error in model orders (models/orders.sql) "
+        "commerce_union_databases: a.orders.x is missing. Build each of the stores."
+    )
+
+
+def test_a_union_without_a_run_is_an_error(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_pass.json")
+    [error] = [f for f in checks.dbt_results(None, cfg) if f.severity == "error"]
+    assert (error.source, error.object) == ("the commerce union", "the commerce union")
+    assert error.sentence == "The union has not been built yet: run `dactopus run`."
+
+
+def test_a_union_with_a_run_shows_its_results_under_its_name(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_pass.json")
+    _target(cfg, label="union-commerce", run_results="run_results_build_pass.json")
+    found = checks.dbt_results(None, cfg)
+    assert {f.source for f in found} == {"shopify", "the commerce union"}
+    assert not any(f.severity == "error" for f in found)

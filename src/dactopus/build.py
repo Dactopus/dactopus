@@ -17,7 +17,7 @@ import yaml
 from clickhouse_connect.driver.client import Client
 
 from .config import Config
-from .library import Daily, deployment
+from .library import Daily, Union, deployment, unions_of
 
 
 class BuildError(Exception):
@@ -65,30 +65,40 @@ def write_profile(config: Config, project: Path, database: str, directory: Path)
     return directory
 
 
-def output(config: Config, label: str) -> Path:
-    """The source's profile and dbt output: .dactopus/<label>/."""
-    return config.workdir / label
+# A union's key in the output directory and in the results: a label cannot hold
+# a hyphen, so no source's output is a union's.
+UNION = "union-"
 
 
-def target(config: Config, label: str) -> Path:
-    """Where dbt writes the source's run_results.json, manifest.json and sources.json."""
-    return output(config, label) / "target"
+def union_key(union: Union) -> str:
+    return f"{UNION}{union.name}"
+
+
+def title(key: str) -> str:
+    """The name of a source or a union in messages: the label, or "the commerce union"."""
+    return f"the {key.removeprefix(UNION)} union" if key.startswith(UNION) else key
+
+
+def output(config: Config, key: str) -> Path:
+    """The profile and dbt output of a source or a union: .dactopus/<key>/."""
+    return config.workdir / key
+
+
+def target(config: Config, key: str) -> Path:
+    """Where dbt writes the run_results.json, manifest.json and sources.json of a key."""
+    return output(config, key) / "target"
 
 
 def command(
-    config: Config, library: Path, label: str, *dbt_args: str
+    config: Config, library: Path, key: str, *dbt_args: str
 ) -> tuple[list[str], dict[str, str]]:
-    """The dbt command line of a source (build by default) and its environment."""
-    source = config.sources[label]
-    project = library / "sources" / source.package
-    where = output(config, label)
-    profiles = write_profile(config, project, source.database, where)
-    variables = dict(source.vars)
-    declared = deployment(config.models, library, source.package).vars
-    variables[declared["input_database"]] = source.input_database
-    variables[declared["source_id"]] = label
-    if "time_zone" in declared:
-        variables[declared["time_zone"]] = source.timezone
+    """The dbt command line of a source by its label or a union by its key (build by default)."""
+    if key in config.sources:
+        project, database, variables = _source_project(config, library, key)
+    else:
+        project, database, variables = _union_project(config, library, key)
+    where = output(config, key)
+    profiles = write_profile(config, project, database, where)
     argv = [
         _dbt(),
         *(dbt_args or ("build",)),
@@ -111,6 +121,33 @@ def command(
         "DBT_SEND_ANONYMOUS_USAGE_STATS": "false",
     }
     return argv, env
+
+
+def _source_project(
+    config: Config, library: Path, label: str
+) -> tuple[Path, str, dict[str, object]]:
+    """The dbt project of a source, the database it writes to and its variables."""
+    source = config.sources[label]
+    variables: dict[str, object] = dict(source.vars)
+    declared = deployment(config.models, library, source.package).vars
+    variables[declared["input_database"]] = source.input_database
+    variables[declared["source_id"]] = label
+    if "time_zone" in declared:
+        variables[declared["time_zone"]] = source.timezone
+    return library / "sources" / source.package, source.database, variables
+
+
+def _union_project(config: Config, library: Path, key: str) -> tuple[Path, str, dict[str, object]]:
+    """The dbt project of a union, the database of the unions and its variables.
+
+    The databases of its sources go in the order of the configuration, so a
+    rebuild with nothing changed writes the same views.
+    """
+    for union, members in unions_of(config, library).items():
+        if union_key(union) == key:
+            variables: dict[str, object] = {union.databases: [m.database for m in members]}
+            return library / "unions" / union.name, config.clickhouse.database, variables
+    raise BuildError(f"build: no union {title(key)} for the configured sources.")
 
 
 def failure(config: Config, label: str, writes: str) -> Path:
@@ -152,13 +189,14 @@ def _run(config: Config, library: Path, label: str, *dbt_args: str, writes: str)
     written.unlink(missing_ok=True)
     failed.unlink(missing_ok=True)
     step = f"dbt {' '.join(dbt_args)}"
+    name = title(label)
     try:
         argv, env = command(config, library, label, *dbt_args)
     except BuildError as exc:
         failed.parent.mkdir(parents=True, exist_ok=True)
         failed.write_text(f"{step}\n{exc}\n")
         raise
-    print(f"build: {step} of {label}", file=sys.stderr)
+    print(f"build: {step} of {name}", file=sys.stderr)
     # dbt prints its own progress, passed on as it comes; the password is
     # only in the environment.
     with subprocess.Popen(
@@ -177,7 +215,7 @@ def _run(config: Config, library: Path, label: str, *dbt_args: str, writes: str)
         written.unlink(missing_ok=True)
         failed.write_text(f"{step}\n{message}\n")
         raise BuildError(
-            f"build: {step} of {label} could not run (exit {process.returncode}): {message} "
+            f"build: {step} of {name} could not run (exit {process.returncode}): {message} "
             f"See {output(config, label) / 'logs' / 'dbt.log'}."
         )
 
@@ -252,6 +290,32 @@ def misdated(
     if not of:
         return Misdated(0, 0)
     return Misdated(int(rows), int(of), first, last)
+
+
+def check_unions(client: Client, config: Config, library: Path) -> None:
+    """Refuse to build the unions into a database that holds tables.
+
+    The unions are views over the sources' databases. A table in their
+    database, such as the canonical tables a 0.2.x installation built there,
+    would be replaced by a view of the same name without a word.
+    """
+    if not unions_of(config, library):
+        return
+    found = [
+        name
+        for (name,) in client.query(
+            "SELECT name FROM system.tables WHERE database = {db:String} AND engine != 'View' "
+            "ORDER BY name",
+            parameters={"db": config.clickhouse.database},
+        ).result_rows
+    ]
+    if found:
+        listed = ", ".join(found[:5]) + (", ..." if len(found) > 5 else "")
+        raise BuildError(
+            f"build: {config.clickhouse.database}, the database of the unions, holds tables "
+            f"({listed}), and a union would replace those it has the name of with views. "
+            "Give clickhouse.database another name, or drop the old tables if nothing reads them."
+        )
 
 
 def check_zone(client: Client, config: Config, library: Path, refresh: set[str]) -> None:

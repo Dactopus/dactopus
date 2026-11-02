@@ -224,9 +224,16 @@ def test_a_library_without_unions_is_refused(tmp_path):
     )
 
 
+def _union_declarations(root, *names):
+    for name in names:
+        (root / "unions" / name).mkdir(parents=True, exist_ok=True)
+        text = (FIXTURE_LIBRARY / "unions" / name / "deployment.yml").read_text()
+        (root / "unions" / name / "deployment.yml").write_text(text)
+
+
 def test_a_package_without_the_label_role_is_refused(tmp_path):
     root = tmp_path / "library"
-    (root / "unions").mkdir(parents=True)
+    _union_declarations(root, "commerce", "web_analytics")
     for package in ("ga4", "shopify"):
         (root / "sources" / package).mkdir(parents=True)
         text = (FIXTURE_LIBRARY / "sources" / package / "deployment.yml").read_text()
@@ -238,3 +245,71 @@ def test_a_package_without_the_label_role_is_refused(tmp_path):
         "models.version to v0.9.0 or later",
     ):
         _check(tmp_path, root=root)
+
+
+def test_a_package_no_union_serves_is_refused(tmp_path):
+    root = tmp_path / "library"
+    _union_declarations(root, "commerce")
+    for package in ("ga4", "shopify"):
+        (root / "sources" / package).mkdir(parents=True)
+        text = (FIXTURE_LIBRARY / "sources" / package / "deployment.yml").read_text()
+        (root / "sources" / package / "deployment.yml").write_text(text)
+    with pytest.raises(
+        LibraryError,
+        match="ga4: no union of the models library serves entities/web_analytics.yaml, so "
+        "website could not be served; set models.version to v0.9.0 or later",
+    ):
+        _check(tmp_path, root=root)
+
+
+def _sources(tmp_path, *packages):
+    path = tmp_path / "dactopus.yaml"
+    known = {
+        "ga4": {"package": "ga4", "project": "p", "dataset": "a.b"},
+        "shopify": {"package": "shopify", "shop": "s"},
+        "woocommerce": {"package": "woocommerce"},
+    }
+    sources = {f"{package}_{i}": dict(known[package]) for i, package in enumerate(packages)}
+    path.write_text(
+        "clickhouse: {url: 'http://db.local', database: d}\n"
+        "timezone: UTC\n"
+        f"models: {{path: {FIXTURE_LIBRARY}}}\n"
+        f"sources: {sources}\n"
+    )
+    return config.load(path, environ={})
+
+
+def test_a_source_belongs_to_the_union_that_serves_its_packages_model(tmp_path):
+    cfg = _sources(tmp_path, "shopify", "ga4", "woocommerce", "shopify")
+    found = library.unions_of(cfg, FIXTURE_LIBRARY)
+    assert {union.name: [s.label for s in members] for union, members in found.items()} == {
+        "commerce": ["shopify_0", "woocommerce_2", "shopify_3"],
+        "web_analytics": ["ga4_1"],
+    }
+    commerce = next(union for union in found if union.name == "commerce")
+    assert (commerce.model, commerce.databases) == (
+        "entities/commerce.yaml",
+        "commerce_union_databases",
+    )
+
+
+def test_a_union_without_sources_is_left_out(tmp_path):
+    cfg = _sources(tmp_path, "shopify")
+    assert [u.name for u in library.unions_of(cfg, FIXTURE_LIBRARY)] == ["commerce"]
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("vars: {input_databases: d}\n", "model: missing"),
+        ("model: m\n", r"vars: missing"),
+        ("model: m\nvars: {input_databases: 'a; b'}\n", "input_databases: missing; expected a"),
+        ("model: [\n", "not valid YAML"),
+    ],
+)
+def test_a_wrong_union_declaration_is_refused(tmp_path, text, message):
+    root = tmp_path / "library"
+    (root / "unions" / "u").mkdir(parents=True)
+    (root / "unions" / "u" / "deployment.yml").write_text(text)
+    with pytest.raises(LibraryError, match=message):
+        library.union_deployments(Models(version=None, path=root), root)

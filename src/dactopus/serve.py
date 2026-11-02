@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .config import Config
-from .library import deployment
+from .library import unions_of
 
 
 class ServeError(Exception):
@@ -14,18 +14,20 @@ class ServeError(Exception):
 
 
 def model_files(cfg: Config, library: Path) -> list[Path]:
-    """The model files the packages of the configured sources declare, each once."""
+    """The model file of each union that has sources, in the order of the library's unions.
+
+    A union's views read its sources' databases, so every source is served
+    through its union, one model per area (commerce, web analytics).
+    """
     files: list[Path] = []
-    for source in cfg.sources.values():
-        model = deployment(cfg.models, library, source.package).model
-        path = library / model
+    for union in unions_of(cfg, library):
+        path = library / union.model
         if not path.is_file():
             raise ServeError(
-                f"{source.package}: the models library has no {model}; "
+                f"{union.name}: the models library has no {union.model}; "
                 "check models.version or models.path."
             )
-        if path not in files:
-            files.append(path)
+        files.append(path)
     return files
 
 

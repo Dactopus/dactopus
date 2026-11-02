@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from clickhouse_connect.driver.exceptions import DatabaseError
 
-from dactopus import cli, config
+from dactopus import cli, config, library
 from dactopus.cli import COMMANDS, main
 
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
@@ -83,6 +83,7 @@ def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli.shopify, "check_time_zone", lambda package, token, zone, setting: None)
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
     monkeypatch.setattr(cli.build, "check_zone", lambda *args: None)
+    monkeypatch.setattr(cli.build, "check_unions", lambda *args: None)
     monkeypatch.setattr(cli.clickhouse, "create_input", refuse)
     assert main(["run", "--config", str(path)]) == 1
     err = capsys.readouterr().err
@@ -158,6 +159,9 @@ def _stub_run(monkeypatch, steps):
         cli.build, "check_zone", lambda client, cfg, root, refresh: steps.append(("zone", refresh))
     )
     monkeypatch.setattr(
+        cli.build, "check_unions", lambda client, cfg, root: steps.append(("unions database",))
+    )
+    monkeypatch.setattr(
         cli.clickhouse, "create_input", lambda *args: steps.append(("input", args[2], args[3]))
     )
     monkeypatch.setattr(cli.ga4, "BigQueryExport", lambda settings: object())
@@ -176,7 +180,7 @@ def _stub_run(monkeypatch, steps):
     monkeypatch.setattr(
         cli.build,
         "build",
-        lambda cfg, root, label, full_refresh: steps.append(("build", label, full_refresh)),
+        lambda cfg, root, label, full_refresh=False: steps.append(("build", label, full_refresh)),
     )
     monkeypatch.setattr(cli, "_report", lambda cfg, root, client: 0)
 
@@ -203,6 +207,8 @@ def test_run_loads_only_the_sources_it_has_a_loader_for(tmp_path, monkeypatch):
         ("build", "website", False),
         ("build", "main_store", False),
         ("build", "europe_store", False),
+        ("build", "union-commerce", False),
+        ("build", "union-web_analytics", False),
     ]
 
 
@@ -215,12 +221,15 @@ def test_run_rebuilds_the_named_sources_after_the_usual_load(tmp_path, monkeypat
     assert steps == [
         ("shop zone", "UTC", "timezone"),
         ("zone", {"main_store"}),
+        ("unions database",),
         ("input", "ga4", "dactopus_website_raw"),
         ("load", "ga4", "dactopus_website_raw"),
         ("input", "shopify", "dactopus_main_store_raw"),
         ("load", "shopify", "dactopus_main_store_raw", "main_store"),
         ("build", "website", False),
         ("build", "main_store", True),
+        ("build", "union-commerce", False),
+        ("build", "union-web_analytics", False),
     ]
 
 
@@ -272,6 +281,8 @@ def test_check_builds_the_report_over_the_library_fixtures(
         )
         for label in cfg.sources:
             build.build(cfg, models_library, label)
+        for union in library.unions_of(cfg, models_library):
+            build.build(cfg, models_library, build.union_key(union))
         assert main(["check", "--config", str(path)]) == 1
     finally:
         _drop(client, database)
@@ -284,6 +295,12 @@ def test_check_builds_the_report_over_the_library_fixtures(
     assert "| Day | events | sessions | purchases |" in text
     assert "| Day | orders | refunds |" in text
     assert "- pass: orders.order_id: No order_id repeats in orders." in text
+    # The unions' views over the sources' databases were built and tested.
+    assert "### the commerce union" in text and "### the web_analytics union" in text
+    assert (
+        "- pass: orders.source_id: The commerce_union_distinct_source_ids test on "
+        "orders.source_id passes." in text.split("### the commerce union")[1]
+    )
 
 
 def _rows(client, database, table):
@@ -351,7 +368,7 @@ def test_a_source_dbt_cannot_build_does_not_stop_the_others(tmp_path, monkeypatc
     steps = []
     _stub_run(monkeypatch, steps)
 
-    def build(cfg, root, label, full_refresh):
+    def build(cfg, root, label, full_refresh=False):
         steps.append(("build", label))
         if label == "website":
             raise cli.build.BuildError("build: dbt build of website could not run (exit 2): no.")
@@ -359,7 +376,13 @@ def test_a_source_dbt_cannot_build_does_not_stop_the_others(tmp_path, monkeypatc
     monkeypatch.setattr(cli.build, "build", build)
     monkeypatch.setattr(cli, "_report", lambda cfg, root, client: steps.append("report") or 1)
     assert main(["run", "--config", str(path)]) == 1
-    assert steps[-3:] == [("build", "website"), ("build", "main_store"), "report"]
+    assert steps[-5:] == [
+        ("build", "website"),
+        ("build", "main_store"),
+        ("build", "union-commerce"),
+        ("build", "union-web_analytics"),
+        "report",
+    ]
     assert (
         "dactopus: build: dbt build of website could not run (exit 2): no."
         in capsys.readouterr().err
