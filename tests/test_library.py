@@ -67,7 +67,7 @@ def test_unreadable_archive_is_refused(tmp_path):
         library.resolve(Models("v9.9.9", None), cache=tmp_path, fetch=lambda url: b"<html>")
 
 
-# The deployment.yml of the GA4 and Shopify packages of v0.6.0, and one
+# The deployment.yml of the GA4 and Shopify packages of v0.9.0, and one
 # without vars.input_database.
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 CHECKOUT = Models(version=None, path=FIXTURE_LIBRARY)
@@ -78,6 +78,7 @@ def test_a_package_with_a_time_zone(tmp_path):
     assert declared.model == "entities/commerce.yaml"
     assert declared.vars == {
         "input_database": "shopify_input_database",
+        "source_id": "shopify_source_id",
         "time_zone": "shopify_timezone",
     }
     assert declared.daily == (
@@ -89,7 +90,10 @@ def test_a_package_with_a_time_zone(tmp_path):
 def test_a_package_without_a_time_zone(tmp_path):
     declared = library.deployment(CHECKOUT, FIXTURE_LIBRARY, "ga4")
     assert declared.model == "entities/web_analytics.yaml"
-    assert declared.vars == {"input_database": "ga4_input_database"}
+    assert declared.vars == {
+        "input_database": "ga4_input_database",
+        "source_id": "ga4_source_id",
+    }
     assert [(d.table, d.gap) for d in declared.daily] == [
         ("events", True),
         ("sessions", False),

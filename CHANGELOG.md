@@ -7,6 +7,13 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+### Changed
+
+- The sample configuration of `dactopus init` and the tests use the
+  models library v0.9.0. The comment on `models.version` in the sample
+  says to run `dactopus run --full-refresh` once after moving to a
+  release that changes a model's columns.
+
 ## [0.2.1] - 2026-11-01
 
 ### Fixed

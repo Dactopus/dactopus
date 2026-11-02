@@ -7,6 +7,7 @@ model: entities/web_analytics.yaml
 # it does not record, and the package takes none.
 vars:
   input_database: ga4_input_database
+  source_id: ga4_source_id
 # The built tables a deployment counts rows per day in, by `date`, a Date
 # column. `time` is the column whose day `date` is, in the property's
 # zone: a count of rows where `date` is not the day of `time` in a zone
