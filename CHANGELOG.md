@@ -70,6 +70,14 @@ a minor release may change the command line and the configuration file.
   has; a source's `vars` may not set the variables of the label, the
   input database or the time zone.
 
+### Fixed
+
+- The rows per day of a GA4 source in the report: each table ended its
+  week at its own latest day, so the purchases of a site whose last
+  purchase came days before its last events were counted over another
+  week than the events. Every table of a source without a time zone now
+  ends at the latest day of any of them, and a day without rows is 0.
+
 ## [0.2.1] - 2026-11-01
 
 ### Fixed
