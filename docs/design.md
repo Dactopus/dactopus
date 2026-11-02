@@ -31,8 +31,8 @@ values are needed before the first build and in `serve`, where dbt does
 not run; `meta` would be readable only from `manifest.json`, which
 exists after a run. A consequence: a package without a loader
 (WooCommerce, whose tables reach ClickHouse by CDC) will cost the runner
-a configuration section and nothing else; 0.1.0 accepts `ga4` and
-`shopify` only. A gap between the library and the runner is fixed in the
+a configuration section and nothing else; 0.1.0 accepted `ga4` and
+`shopify` only, and every package since 2 November 2026 (below). A gap between the library and the runner is fixed in the
 library, never patched around here.
 
 ## The executor knows nothing of Dactopus
@@ -110,13 +110,15 @@ control plane; the library and the executor will not need that package.
 The first value handled this way is `store.timezone`, passed to the
 Shopify package as `shopify_timezone` and to the executor as
 `--time-zone`, so the days of the tables and "today" in an agent's
-question are the store's.
+question are the store's. It became `timezone` and a zone per source on
+2 November 2026 (below).
 
 Secrets never enter the file: it names the environment variables that
 hold them (`password_env`, `client_id_env`, `client_secret_env`) or a
 Google key file. One input database serves every package and one
 canonical database holds the built tables, and they must differ: some
 canonical tables carry the names of input tables (`events`, `orders`).
+Each source has databases of its own since 2 November 2026 (below).
 
 ## The runner writes the dbt profile (21 October 2026)
 
@@ -146,7 +148,8 @@ in the `serve` section. The password with write rights never reaches the
 settings of an AI client, and ClickHouse grants, settings profiles and
 quotas apply to the agent apart from the loads. Each command reads only
 the password it connects with. Verified on ClickHouse 26.9.5: read
-grants on the canonical database are enough.
+grants on the canonical database are enough. Since the unions the user
+also needs the databases of the sources (3 November 2026, below).
 
 ## Checks are the one plugin interface
 
@@ -158,7 +161,9 @@ a check is a named object that takes a ClickHouse connection and the
 configuration and returns findings of one shape (check, object,
 severity, observed, expected, a sentence for the owner), registered
 through the entry point group `dactopus.checks`. Everything else in the
-runner is a direct call.
+runner is a direct call. On 2 November 2026 a finding got an optional
+`source`, the source it is about, so the report can group by source; a
+plugin that leaves it out keeps working.
 
 ## Shopify in the prototype, with a client of our own (21 October 2026)
 
@@ -208,3 +213,91 @@ the registry, and a rerun over the unchanged store changed no table.
 Not verified: a store with tens of thousands of orders (25 per page,
 under the GraphQL cost limits), an export with large daily tables, a
 server that terminates TLS.
+
+## Sources under labels, with databases of their own (2 November 2026)
+
+The models library v0.9.0 has four packages, three areas (commerce, web
+analytics, IoT) and unions of several sources of one area. The runner
+0.2 served one store: `packages` took `ga4` and `shopify` only, with
+one input database, one canonical database and one zone. A brand with
+two stores needed two runners and two MCP servers, and the agent could
+not answer for both stores at once.
+
+`sources` maps labels to sources: the key is the label, which the
+package takes as its `source_id`, and `package` is its type. The name
+`sources` matches the library's documents; `instances` reads as
+technical, and `stores` is wrong for GA4 and sensor networks. The
+databases follow from `clickhouse.database` as a prefix: the unions in
+it, the canonical tables of a source in `<prefix>_<label>`, its input in
+`<prefix>_<label>_raw`. The file stays short and two sources cannot
+collide. A source may name its input database: a CDC transport's
+database was named when the client set it up, and an upgrade from 0.2
+keeps the GA4 input it loaded (a full load of the public sample takes
+6 minutes, a brand's export hours). The canonical database has no
+override, since only the client's BI sees its name.
+
+Every package of the library is accepted. The runner loads GA4 and
+Shopify; the input of the others comes from the client's transport or
+from the client, and the runner leaves that database alone.
+
+## Always through a union (2 November 2026)
+
+`serve` reads the views of the unions, with one store too. One path in
+the code; and an installation with a store and a GA4 property already
+has two sources in two databases, which the executor could not read as
+one model without a union. The cost is one more database, one more
+`dbt build` per run (the views and the union's tests, such as the
+uniqueness of an order key across stores) and grants on more databases.
+
+A union is a dbt project of the library, run after the sources. The
+runner matches a source to the union whose `deployment.yml` names the
+model of the source's package, and passes the databases of its sources
+in the order of the configuration. The views are recreated on every
+run, so a union sees the columns of a new release and a new source. A
+source whose model no union serves is refused before anything runs, so
+it cannot drop out of `serve` unnoticed.
+
+`clickhouse.database` held the canonical tables in 0.2, and dbt would
+replace those with views of the same name without a word. `run` refuses
+a `clickhouse.database` that holds any table before it loads anything:
+the runner does not know the names of a union's views.
+
+Verified on ClickHouse 26.9.27.3 with dbt-core 1.11.16 and
+dbt-clickhouse 1.10.3 (3 November 2026): five sources (a Shopify
+development store, two WooCommerce and two Sensor.Community fixtures)
+and two unions built in one run; the library's `check_union.py`
+answered 25 of 25 questions over three stores in two currencies and 5
+of 5 over two sensor networks.
+
+## The installation's zone and each source's (2 November 2026)
+
+`timezone` at the top of the file replaces `store.timezone`, since
+"store" misleads with several stores. It is "today" in `serve`, where
+the executor takes one zone for every model, and the zone of every
+source that names none. A source's own `timezone` goes to its package's
+build and to the checks. The IoT area is in UTC: its rows keep the days
+of UTC, and "today" is the installation's date.
+
+## A dbt step that could not run does not stop the others (2 November 2026)
+
+dbt exits with 2 when it cannot run a project, as for a WooCommerce
+source without `woocommerce_currency`; the runner stopped there, with
+no report and the next sources unbuilt. It now passes dbt's output on,
+keeps the step and dbt's error next to the source's output, and goes on;
+the checks show the error with the package's message, and the run exits
+with 1. The zone check before loading still stops the whole run.
+
+## The serve user and the views of the unions (3 November 2026)
+
+A view without `SQL SECURITY` runs as the user who asks
+(`default_normal_view_sql_security = INVOKER`; ClickHouse 26.9.27.3, 3
+November 2026). A `serve` user with `SELECT` on the unions' database
+alone gets "Not enough privileges" from a union's view, so it needs the
+database of each source as well. The sample and the README grant them
+database by database: `GRANT SELECT ON dactopus*.*` would also cover the
+input databases, which hold the store's raw rows, and a name in
+backticks is no pattern (``GRANT SELECT ON `dactopus*`.*`` grants a
+database named `dactopus*`). Views with `SQL SECURITY DEFINER` would
+need the unions' database alone: on the same server a user with `SELECT`
+on it read such a view and not the source's table under it. That is a
+change to the unions of the library.
