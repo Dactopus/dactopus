@@ -163,7 +163,7 @@ generated.
   installation's configuration and returns findings. A finding has one
   shape for built-in and plugin checks alike: check, object, severity,
   observed, expected, a sentence for the owner, and optionally the
-  source it is about (a label, or a union's name). Checks register
+  source it is about (a label, or `union-<name>` for a union). Checks register
   through Python entry points; built-in ones are dbt test results (from
   `target/run_results.json` with `manifest.json` for the test's kind,
   column and parameters), input freshness, rows per day, and the time
