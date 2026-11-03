@@ -85,8 +85,9 @@ class Source:
     database: str
     # The input: <clickhouse.database>_<label>_raw, or the one the source names.
     input_database: str
-    # The zone the source's days are in: passed to a package that takes one,
-    # and checked against the days of the source's daily tables.
+    # The zone the source names, else the installation's: passed to a package
+    # that takes one. A package that fixes its zone overrides it; the zone the
+    # source's days are in is library.source_zone.
     timezone: str
     # Whether the source names its zone, rather than taking the installation's.
     own_timezone: bool

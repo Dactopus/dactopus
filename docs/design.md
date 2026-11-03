@@ -343,8 +343,9 @@ November 2026:
   agent. A row policy on a union's view applies to the user who asks: a
   policy `USING source_id = 'nobody' TO agent` on the commerce union's
   `orders` took the agent's count from 11 to 0 while the owner still
-  counted 11, and it survived the next build of the union. A
-  restriction for one agent goes on the union's views.
+  counted 11 (a user named in no policy of the view reads all its
+  rows), and it survived the next build of the union. A restriction for
+  one agent goes on the union's views.
 - Views built by v0.9.0 and run again with v0.10.0, with no
   `--full-refresh`, are recreated with `SQL SECURITY DEFINER`: 0 of 10
   views had it before, 10 of 10 after.
