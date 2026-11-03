@@ -415,12 +415,13 @@ models:
   # path: ../dactopus-data-models
 
 # The ClickHouse user an AI agent's questions run as in `dactopus serve`, on
-# the host of clickhouse.url. The unions' views run as the user who asks, so
-# it needs SELECT on clickhouse.database and on the database of every source,
-# and on no input database:
+# the host of clickhouse.url. It needs SELECT on clickhouse.database alone:
 #   GRANT SELECT ON dactopus.* TO agent
-#   GRANT SELECT ON dactopus_website.* TO agent
-#   GRANT SELECT ON dactopus_main_store.* TO agent
+# The unions' views read the sources' databases as the user of clickhouse.url,
+# who owns the views; to change that user, run `dactopus run` as the new one
+# first, then drop the old one. A row policy on a source's table applies as
+# that user, not as the agent; the agent's own grants, settings profile and
+# quotas apply.
 # Without this section, serve runs as the user of clickhouse.url.
 # serve:
 #   user: agent
