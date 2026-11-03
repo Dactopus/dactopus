@@ -3,8 +3,9 @@
 # Format and checks: tests/check_deployment.py.
 model: entities/web_analytics.yaml
 # A role, and the dbt variable (dbt_project.yml) that plays it. No
-# time_zone: the export writes event_date in the property's zone, which
-# it does not record, and the package takes none.
+# time_zone and no zone: the export writes event_date in the property's
+# zone, which it does not record, so only the deployment knows it. The
+# package takes none and fixes none.
 vars:
   input_database: ga4_input_database
   source_id: ga4_source_id

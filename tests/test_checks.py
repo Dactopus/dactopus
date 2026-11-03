@@ -28,7 +28,7 @@ from dactopus.build import Misdated
 FIXTURES = Path(__file__).parent / "fixtures" / "dbt" / "shopify"
 
 # The deployment.yml of the packages and unions of dactopus-data-models
-# v0.9.0, and a package without vars.input_database.
+# v0.10.0, and a package without vars.input_database.
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 # The day after the latest day of _daily(date(2026, 10, 20), ...), at noon.

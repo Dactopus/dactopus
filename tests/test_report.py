@@ -16,7 +16,7 @@ def _config(tmp_path, **sources):
             {
                 "clickhouse": {"url": "http://db.local:8123", "database": "canonical"},
                 "timezone": "UTC",
-                "models": {"version": "v0.9.0"},
+                "models": {"version": "v0.10.0"},
                 "sources": {"main_store": {"package": "shopify", "shop": "s"}, **sources},
             },
             sort_keys=False,

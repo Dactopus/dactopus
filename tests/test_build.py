@@ -23,7 +23,7 @@ def _config(tmp_path, prefix="dactopus", models=None, label="shopify", source=No
                     "database": prefix,
                 },
                 "timezone": "America/New_York",
-                "models": models or {"version": "v0.9.0"},
+                "models": models or {"version": "v0.10.0"},
                 "sources": {label: source or {"package": "shopify", "shop": "s"}},
             }
         )
