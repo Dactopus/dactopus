@@ -1,9 +1,13 @@
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import yaml
 
 from dactopus import config, report
 from dactopus.checks import Finding, Volume
+
+# The deployment.yml of the packages and unions of dactopus-data-models v0.10.0.
+FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 NOW = datetime(2026, 10, 22, 7, 30, tzinfo=UTC)
 
@@ -16,7 +20,7 @@ def _config(tmp_path, **sources):
             {
                 "clickhouse": {"url": "http://db.local:8123", "database": "canonical"},
                 "timezone": "UTC",
-                "models": {"version": "v0.10.0"},
+                "models": {"path": str(FIXTURE_LIBRARY)},
                 "sources": {"main_store": {"package": "shopify", "shop": "s"}, **sources},
             },
             sort_keys=False,
@@ -190,6 +194,27 @@ def test_a_source_in_another_zone_than_the_installation_says_so(tmp_path):
         'Its days are in Europe/Berlin; "today" in an agent\'s question is the date in UTC.'
     )
     assert lines[lines.index("### main_store") + 2].startswith("The last 7 days")
+
+
+def test_a_package_that_fixes_its_zone_says_so_in_it(tmp_path):
+    cfg = _config(tmp_path, network={"package": "sensor_community"})
+    cfg_berlin = config.load(_rewrite(cfg, "Europe/Berlin"), environ={})
+    latest = date(2026, 10, 21)
+    lines = report.render(cfg_berlin, [], [_volume("network", "readings", latest, 4)], NOW)
+    at = lines.splitlines().index("### network")
+    assert lines.splitlines()[at + 2] == (
+        'Its days are in UTC; "today" in an agent\'s question is the date in Europe/Berlin.'
+    )
+    # In an installation in UTC the note is left out.
+    plain = report.render(cfg, [], [_volume("network", "readings", latest, 4)], NOW)
+    assert "Its days are in" not in plain
+
+
+def _rewrite(cfg, zone):
+    """The configuration file of cfg with another installation time zone."""
+    text = cfg.path.read_text().replace("timezone: UTC", f"timezone: {zone}")
+    cfg.path.write_text(text)
+    return cfg.path
 
 
 def test_a_union_is_named_in_words(tmp_path):

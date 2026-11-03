@@ -433,8 +433,8 @@ models:
 #   timezone: the zone its days are in, when not the installation's. A store
 #     package builds its days in it: Settings > General in the Shopify admin,
 #     and after changing it run `dactopus run --full-refresh <label>` once.
-#     For GA4, the property's zone (Admin > Property details); for
-#     Sensor.Community, UTC.
+#     For GA4, the property's zone (Admin > Property details). A package
+#     that fixes the zone of its days takes none.
 #   input_database: the database of its input, when not <database>_<label>_raw;
 #     for a package the runner does not load, the one the client's transport
 #     (CDC) writes.

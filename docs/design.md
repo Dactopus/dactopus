@@ -278,6 +278,27 @@ source that names none. A source's own `timezone` goes to its package's
 build and to the checks. The IoT area is in UTC: its rows keep the days
 of UTC, and "today" is the installation's date.
 
+## A package that fixes its zone (3 November 2026)
+
+The Sensor.Community package builds its days in UTC whatever the
+deployment, and its source in the configuration said so only through a
+`timezone: UTC` the client had to remember. Release v0.10.0 of the models
+library lets a package's `deployment.yml` declare `zone`, and the runner
+reads it. The zone of a source is the package's `zone` if it declares
+one, else the source's `timezone`, else the installation's. `zone` and
+the role `time_zone` exclude each other (a package either takes the zone
+from the deployment or fixes it), so the variable the runner passes to a
+package and the zone it checks the tables against cannot disagree.
+
+A `timezone` on a source of a package that fixes its zone is refused, not
+ignored: a setting that does nothing reads as one that works. The time
+zone check counts such a package's tables over the days `rows_per_day`
+reads, not whole as for a package built in the zone of the deployment: a
+fixed zone never changes, so tables built in another one show on any of
+their days, and Sensor.Community's `readings` is its largest table. A row
+on another day is a `fail` whose sentence names the package's
+`deployment.yml`, not a setting of the client's.
+
 ## A dbt step that could not run does not stop the others (2 November 2026)
 
 dbt exits with 2 when it cannot run a project, as for a WooCommerce

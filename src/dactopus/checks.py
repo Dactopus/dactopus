@@ -611,26 +611,31 @@ def _days(days: list[date]) -> str:
 
 # Time zone: the daily tables with a time column, counted for rows whose
 # date is not the day of their time in the source's zone. A package with a
-# time zone variable is built in that zone, so such a row means tables
-# built in another one. A package without one has the days of its source
-# (GA4: the property's zone; Sensor.Community: UTC), counted over the days
-# rows_per_day reads: such rows mean the source's days are in another zone
-# than the configuration says.
+# time zone variable is built in that zone, and one that declares a zone
+# fixes it, so such a row means tables built in another one. Only the first
+# is counted whole: after a change of the variable, the days built before it
+# keep the old zone. A fixed zone never changes, so its tables, and those of
+# a package with neither (GA4: the property's zone, where such rows mean the
+# source's days are in another zone than the configuration says), are
+# counted over the days rows_per_day reads.
 
 
 def time_zone(client: Client, config: Config) -> list[Finding]:
     """Whether the days of each daily table are those of its source's zone."""
     findings: list[Finding] = []
+    root = library.resolve(config.models)
     for label, source in config.sources.items():
-        zone = source.timezone
+        zone = library.source_zone(config, root, source)
+        setting = library.source_zone_setting(config, root, source)
         expected = f"every row on its day in {zone}"
         declared = _deployment(config, source)
-        built_in_zone = "time_zone" in declared.vars
+        fixed = declared.zone is not None
+        built_in_zone = "time_zone" in declared.vars or fixed
         for counted in declared.daily:
             if counted.time is None:
                 continue
             table = counted.table
-            days = None if built_in_zone else WEEK * (PAST_WEEKS + 1)
+            days = None if "time_zone" in declared.vars else WEEK * (PAST_WEEKS + 1)
             found = partial(Finding, "time zone", table, expected=expected, source=label)
             try:
                 off = misdated(client, source.database, counted, zone, days)
@@ -658,6 +663,18 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
                         "pass", observed, sentence=f"Every row of {table} is on its day in {zone}."
                     )
                 )
+            elif fixed:
+                findings.append(
+                    found(
+                        "fail",
+                        observed,
+                        sentence=f"{_n(off.rows, 'row')} of {table} "
+                        f"{_verb(off.rows, 'is', 'are')} on another day than in {zone}, the zone "
+                        f"the package fixes ({setting}): the table was built differently. Run "
+                        f"`dactopus run --full-refresh {label}` once to rebuild it; if rows stay "
+                        "on another day, report it to the models library.",
+                    )
+                )
             elif built_in_zone:
                 findings.append(
                     found(
@@ -676,7 +693,7 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
                         observed,
                         sentence=f"{_share(off.rows, off.of)} of the rows of {table} from "
                         f"{off.first} to {off.last} are on another day in {zone} (from "
-                        f"{source.timezone_setting}): the source counts its days in another "
+                        f"{setting}): the source counts its days in another "
                         f"time zone. Set sources.{label}.timezone to the zone its days are in.",
                     )
                 )

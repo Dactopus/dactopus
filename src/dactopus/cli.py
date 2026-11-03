@@ -105,7 +105,10 @@ def _run(args: argparse.Namespace) -> int:
         if isinstance(source.loader, config.Shopify):
             tokens[label] = shopify.access_token(source.loader)
             shopify.check_time_zone(
-                source.loader, tokens[label], source.timezone, source.timezone_setting
+                source.loader,
+                tokens[label],
+                library.source_zone(cfg, root, source),
+                library.source_zone_setting(cfg, root, source),
             )
     client = _connect(cfg)
     with _step(

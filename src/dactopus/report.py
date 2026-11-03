@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
+from . import library
 from .build import title
 from .checks import PAST_WEEKS, SEVERITIES, Finding, Volume
 from .config import Config
@@ -66,6 +67,7 @@ def _checks(findings: list[Finding]) -> list[str]:
 
 def _volumes(config: Config, volumes: list[Volume]) -> list[str]:
     lines = ["## Rows per day", ""]
+    root = library.resolve(config.models)
     if not volumes:
         lines.append("No tables to count.")
     for label in dict.fromkeys(v.source for v in volumes):
@@ -73,10 +75,11 @@ def _volumes(config: Config, volumes: list[Volume]) -> list[str]:
         lines.append(f"### {label}")
         lines.append("")
         source = config.sources.get(label)
-        if source is not None and source.timezone != config.timezone:
+        zone = library.source_zone(config, root, source) if source is not None else None
+        if zone is not None and zone != config.timezone:
             # One "today" for every source: the executor takes one zone.
             lines.append(
-                f'Its days are in {source.timezone}; "today" in an agent\'s question is '
+                f'Its days are in {zone}; "today" in an agent\'s question is '
                 f"the date in {config.timezone}."
             )
             lines.append("")
