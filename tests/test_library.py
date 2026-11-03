@@ -3,6 +3,7 @@ import tarfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 from dactopus import config, library
 from dactopus.config import ConfigError, Models
@@ -101,6 +102,16 @@ def test_a_package_without_a_time_zone(tmp_path):
     ]
 
 
+def test_a_package_that_fixes_its_zone():
+    assert library.deployment(CHECKOUT, FIXTURE_LIBRARY, "sensor_community").zone == "UTC"
+    assert "time_zone" not in library.deployment(CHECKOUT, FIXTURE_LIBRARY, "sensor_community").vars
+
+
+@pytest.mark.parametrize("package", ["shopify", "woocommerce", "ga4"])
+def test_a_package_that_fixes_no_zone(package):
+    assert library.deployment(CHECKOUT, FIXTURE_LIBRARY, package).zone is None
+
+
 def test_a_package_without_the_file_names_what_to_raise(tmp_path):
     (tmp_path / "sources" / "woocommerce").mkdir(parents=True)
     with pytest.raises(LibraryError) as found:
@@ -165,6 +176,18 @@ def test_unknown_keys_and_roles_are_ignored(tmp_path):
         ),
         ("model: m\nvars: {input_database: v}\ndaily: [{table: t, date: d, gap: 1}]\n", "gap"),
         ("model: [\n", "not valid YAML"),
+        (
+            "model: m\nvars: {input_database: v}\nzone: Mars/Olympus\ndaily: []\n",
+            r"p: sources/p/deployment.yml: zone: expected a time zone like UTC; report it",
+        ),
+        (
+            "model: m\nvars: {input_database: v}\nzone: [UTC]\ndaily: []\n",
+            "zone: expected a time zone",
+        ),
+        (
+            "model: m\nvars: {input_database: v, time_zone: v_tz}\nzone: UTC\ndaily: []\n",
+            r"zone and the role time_zone exclude each other; report it",
+        ),
     ],
 )
 def test_a_wrong_declaration_is_refused(tmp_path, text, message):
@@ -343,3 +366,57 @@ def test_a_checkout_is_not_compared_to_the_floor(tmp_path):
     path = tmp_path / "dactopus.yaml"
     path.write_text(config.SAMPLE.replace("version: v0.10.0", f"path: {FIXTURE_LIBRARY}"))
     library.check(config.load(path, environ={}), FIXTURE_LIBRARY)
+
+
+def _zones(tmp_path, **sensors):
+    """A Sensor.Community source, a Shopify store and a GA4 property over the fixture library."""
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "clickhouse": {"url": "http://db.local", "database": "d"},
+                "timezone": "Europe/Berlin",
+                "models": {"path": str(FIXTURE_LIBRARY)},
+                "sources": {
+                    "sensors": {"package": "sensor_community", **sensors},
+                    "shop": {"package": "shopify", "shop": "s", "timezone": "America/New_York"},
+                    "site": {"package": "ga4", "project": "p", "dataset": "a.b"},
+                },
+            }
+        )
+    )
+    return config.load(path, environ={})
+
+
+def test_a_package_that_fixes_its_zone_gives_it_to_its_sources(tmp_path):
+    cfg = _zones(tmp_path)
+    library.check(cfg, FIXTURE_LIBRARY)
+    zones = {
+        label: library.source_zone(cfg, FIXTURE_LIBRARY, source)
+        for label, source in cfg.sources.items()
+    }
+    # The package's zone, the source's own, the installation's.
+    assert zones == {"sensors": "UTC", "shop": "America/New_York", "site": "Europe/Berlin"}
+
+
+def test_the_setting_a_zone_comes_from_is_named(tmp_path):
+    cfg = _zones(tmp_path)
+    settings = {
+        label: library.source_zone_setting(cfg, FIXTURE_LIBRARY, source)
+        for label, source in cfg.sources.items()
+    }
+    assert settings == {
+        "sensors": "sources/sensor_community/deployment.yml of the models library",
+        "shop": "sources.shop.timezone",
+        "site": "timezone",
+    }
+
+
+def test_a_zone_of_a_source_on_a_package_that_fixes_it_is_refused(tmp_path):
+    cfg = _zones(tmp_path, timezone="Europe/Paris")
+    with pytest.raises(ConfigError) as found:
+        library.check(cfg, FIXTURE_LIBRARY)
+    assert str(found.value) == (
+        "sources.sensors.timezone: remove it; the package sensor_community fixes its "
+        "days in UTC (sources/sensor_community/deployment.yml)."
+    )

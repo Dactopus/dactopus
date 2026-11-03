@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from zoneinfo import available_timezones
 
 import yaml
 
@@ -59,6 +60,9 @@ class Deployment:
     # A role (input_database, time_zone) and the dbt variable that plays it.
     vars: Mapping[str, str]
     daily: tuple[Daily, ...]
+    # The zone of the package's days, when the package fixes it; excludes
+    # the role time_zone.
+    zone: str | None = None
 
 
 def cache_dir(environ: dict[str, str] | None = None) -> Path:
@@ -145,6 +149,14 @@ def deployment(models: Models, root: Path, package: str) -> Deployment:
     for role in ("source_id", "time_zone"):
         if role in variables:
             _name(variables, role, f"{where}: vars")
+    zone = section.get("zone")
+    if "zone" in section:
+        if not isinstance(zone, str) or zone not in available_timezones():
+            raise LibraryError(f"{where}: zone: expected a time zone like UTC; report it.")
+        if "time_zone" in variables:
+            raise LibraryError(
+                f"{where}: zone and the role time_zone exclude each other; report it."
+            )
     daily = section.get("daily")
     if not isinstance(daily, list):
         raise LibraryError(f"{where}: daily: missing; expected a list of tables; report it.")
@@ -167,6 +179,7 @@ def deployment(models: Models, root: Path, package: str) -> Deployment:
         model=model,
         vars=MappingProxyType({role: str(name) for role, name in variables.items()}),
         daily=tuple(tables),
+        zone=zone,
     )
 
 
@@ -217,6 +230,19 @@ def unions_of(config: Config, root: Path) -> dict[Union, list[Source]]:
     return found
 
 
+def source_zone(config: Config, root: Path, source: Source) -> str:
+    """The zone of a source's days: its package's, else its own, else the installation's."""
+    return deployment(config.models, root, source.package).zone or source.timezone
+
+
+def source_zone_setting(config: Config, root: Path, source: Source) -> str:
+    """Where the zone of a source's days comes from, for messages."""
+    package = deployment(config.models, root, source.package)
+    if package.zone is not None:
+        return f"sources/{source.package}/deployment.yml of the models library"
+    return source.timezone_setting
+
+
 def _version(tag: str) -> tuple[int, ...]:
     return tuple(int(number) for number in tag.removeprefix("v").split("."))
 
@@ -244,7 +270,8 @@ def check(config: Config, root: Path) -> None:
     """Check the library against the sources: their packages, labels and vars.
 
     The runner sets the variables of the roles input_database, source_id
-    and time_zone, so a source's vars may not.
+    and time_zone, so a source's vars may not; a package that fixes its
+    zone takes none from the source.
     """
     _floor(config.models)
     if not (root / "unions").is_dir():
@@ -265,6 +292,11 @@ def check(config: Config, root: Path) -> None:
             raise LibraryError(
                 f"{source.package}: sources/{source.package}/deployment.yml maps no "
                 f"variable to the role source_id; {_upgrade(config.models)}."
+            )
+        if package.zone is not None and source.own_timezone:
+            raise ConfigError(
+                f"sources.{label}.timezone: remove it; the package {source.package} fixes its "
+                f"days in {package.zone} (sources/{source.package}/deployment.yml)."
             )
         for role, setting in (
             ("input_database", f"sources.{label}.input_database or clickhouse.database"),

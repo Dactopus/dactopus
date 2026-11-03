@@ -46,6 +46,7 @@ def _config(tmp_path, *packages, zone="UTC", own=None):
     known = {
         "shopify": {"package": "shopify", "shop": "s"},
         "ga4": {"package": "ga4", "project": "p", "dataset": "a.b"},
+        "sensor_community": {"package": "sensor_community"},
     }
     sources = {p: dict(known[p]) for p in packages or ("shopify",)}
     for label, timezone in (own or {}).items():
@@ -666,7 +667,7 @@ def test_each_source_is_counted_in_its_own_database_and_zone(tmp_path, monkeypat
 
 
 def test_a_source_in_its_own_zone_is_named_by_its_setting(tmp_path, monkeypatch):
-    """Sensor.Community: days in UTC, in an installation in New York."""
+    """GA4 in a property in UTC, in an installation in New York."""
     cfg = _config(tmp_path, "ga4", zone="America/New_York", own={"ga4": "UTC"})
     first, last = date(2026, 9, 15), date(2026, 10, 20)
     _misdated(
@@ -678,6 +679,31 @@ def test_a_source_in_its_own_zone_is_named_by_its_setting(tmp_path, monkeypatch)
     events, sessions, _ = checks.time_zone(None, cfg)
     assert "on another day in UTC (from sources.ga4.timezone)" in events.sentence
     assert sessions.sentence == "Every row of sessions is on its day in UTC."
+
+
+def test_a_package_that_fixes_its_zone_is_counted_in_it_over_the_weeks(tmp_path, monkeypatch):
+    """Sensor.Community: days in UTC, in an installation in New York. A fixed zone
+    never changes, so the days rows_per_day reads are enough."""
+    cfg = _config(tmp_path, "sensor_community", zone="America/New_York")
+    asked = _misdated(monkeypatch, readings=Misdated(0, 16))
+    [readings] = checks.time_zone(None, cfg)
+    assert asked == {"readings": ("UTC", checks.WEEK * (checks.PAST_WEEKS + 1))}
+    assert (readings.severity, readings.expected) == ("pass", "every row on its day in UTC")
+    assert readings.sentence == "Every row of readings is on its day in UTC."
+
+
+def test_rows_on_another_day_in_the_zone_a_package_fixes_name_its_file(tmp_path, monkeypatch):
+    cfg = _config(tmp_path, "sensor_community", zone="America/New_York")
+    _misdated(monkeypatch, readings=Misdated(2, 16, date(2026, 9, 15), date(2026, 10, 20)))
+    [readings] = checks.time_zone(None, cfg)
+    assert readings.severity == "fail"
+    assert readings.observed == "2 of 16 rows on another day, from 2026-09-15 to 2026-10-20"
+    assert readings.sentence == (
+        "2 rows of readings are on another day than in UTC, the zone the package fixes "
+        "(sources/sensor_community/deployment.yml of the models library): the table was "
+        "built differently. Run `dactopus run --full-refresh sensor_community` once to "
+        "rebuild it; if rows stay on another day, report it to the models library."
+    )
 
 
 def test_a_source_dbt_could_not_build_shows_the_package_s_message(tmp_path):

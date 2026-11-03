@@ -95,10 +95,12 @@ as `woocommerce_currency`, go in the source's `vars`.
 IANA name such as `America/New_York`: "today" in an agent's question is
 the date in it. A source whose days are in another zone names it in its
 own `timezone`: for Shopify the store's zone (Settings > General in the
-admin), for GA4 the property's (Admin > Property details), for
-Sensor.Community `UTC`. The rows of a source keep the days of its zone;
-"today" is the installation's date for every source. The runner passes
-a source's zone to its package when the package takes one
+admin), for GA4 the property's (Admin > Property details). A package that
+fixes the zone of its days declares it in its `deployment.yml` in the
+models library (Sensor.Community: `UTC`); a source of such a package names
+no `timezone`, and the runner refuses one. The rows of a source keep the
+days of its zone; "today" is the installation's date for every source. The
+runner passes a source's zone to its package when the package takes one
 (`shopify_timezone` for Shopify, which the source's `vars` may not set).
 
 For a Shopify source, `dactopus run` first reads the shop's zone and
@@ -207,7 +209,7 @@ The built-in checks:
 | `dbt` | `run_results.json` and `manifest.json` of the last dbt run of each source and union | Each model, test and unit test, as a sentence with the count of failing rows |
 | `freshness` | `sources.json` of `dbt source freshness` | The age of the latest input row against the package's `warn_after` and `error_after` |
 | `rows_per_day` | The canonical tables | A day without rows in the last seven days that are over of a table the package marks as a gap in its `deployment.yml` (`events` for GA4, `orders` for Shopify), unless the same weekday had none in the four weeks before |
-| `time_zone` | The daily tables with a time column in `deployment.yml` | Rows whose date is not the day of their time in the source's zone: a `fail` for a package built in it (Shopify), a `warn` with the share of rows for one whose days come with the data (GA4, the property's zone), counted over the days `rows_per_day` reads |
+| `time_zone` | The daily tables with a time column in `deployment.yml` | Rows whose date is not the day of their time in the source's zone: a `fail` for a package built in it (Shopify, every row) or one that fixes it (Sensor.Community), a `warn` with the share of rows for one whose days come with the data (GA4, the property's zone); the last two counted over the days `rows_per_day` reads |
 
 A check is a function of a ClickHouse client and the configuration that
 returns findings; a finding names the check, the object, a severity

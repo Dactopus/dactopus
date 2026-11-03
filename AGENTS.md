@@ -73,7 +73,8 @@ Out of scope, do not build:
 - The runner knows a package only by its `input.sql` and its
   `sources/<package>/deployment.yml`: the Ossie model its tables serve,
   the dbt variables that take the input database, the label and the
-  time zone, and the tables counted per day. A union, by its
+  time zone, the zone its days are in when the package fixes it, and the
+  tables counted per day. A union, by its
   `unions/<union>/deployment.yml`: the model it serves and the dbt
   variable that takes the databases of its sources. A variable, table,
   column or model file name of a package or a union never appears in
