@@ -23,9 +23,11 @@ a minor release may change the command line and the configuration file.
   refused.
 - A source takes `timezone`, the zone its days are in: a store package is
   built in it, and the time zone check counts the days of the source's
-  tables in it (for GA4 the property's zone, for Sensor.Community UTC).
-  The report says when a source's days are in another zone than the
-  installation's.
+  tables in it (for GA4 the property's zone). A package that fixes the
+  zone of its days declares it as `zone` in its `deployment.yml`
+  (Sensor.Community: UTC) and the runner uses it; a `timezone` on a
+  source of such a package is refused. The report says when a source's
+  days are in another zone than the installation's.
 - A source dbt cannot build, test or measure (a package's required
   variable missing, as `woocommerce_currency`) no longer stops the run:
   the other sources go on, the report shows dbt's error with the
@@ -38,7 +40,9 @@ a minor release may change the command line and the configuration file.
   that has sources after the sources, as views in `clickhouse.database`
   over the databases of its sources, and `dactopus check` tests them.
   Their findings have `union-<name>` as their `source` (`union-commerce`),
-  and the report names the union in words ("the commerce union").
+  and the report names the union in words ("the commerce union"). The
+  views belong to the user of `clickhouse.url`: to change that user, run
+  `dactopus run` as the new one first, then drop the old one.
 
 ### Changed
 
@@ -51,8 +55,8 @@ a minor release may change the command line and the configuration file.
 - `dactopus run --full-refresh` takes labels.
 - `dactopus serve` serves the model of each union that has sources, one
   per area (commerce, web analytics), in place of each package's model.
-  The views run as the user who asks, so the `serve` user needs `SELECT`
-  on the database of every source as well as on `clickhouse.database`.
+  The `serve` user needs `SELECT` on `clickhouse.database` alone: the
+  views read the sources' databases as their owner.
 - `dactopus run` refuses, before loading, a `clickhouse.database` that
   holds tables, such as the canonical tables of 0.2: the unions would
   replace those of the same name with views. Give `clickhouse.database`
@@ -61,11 +65,11 @@ a minor release may change the command line and the configuration file.
   refused before anything runs.
 - dbt's output for each source goes to `.dactopus/<label>/`, with the
   profile that writes to the source's database.
-- The models library v0.9.0 or later: an earlier one has no labels, and
-  is refused before anything runs. The sample configuration and the tests
-  use v0.9.0. The comment on `models.version` in the sample says to run
-  `dactopus run --full-refresh` once after moving to a release that
-  changes a model's columns.
+- The models library v0.10.0 or later: an earlier release is refused
+  before anything runs, with the version to set. The sample configuration
+  and the tests use v0.10.0. The comment on `models.version` in the
+  sample says to run `dactopus run --full-refresh` once after moving to a
+  release that changes a model's columns.
 - A package the library does not have is named with the packages it
   has; a source's `vars` may not set the variables of the label, the
   input database or the time zone.
