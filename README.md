@@ -256,15 +256,25 @@ serve:
 ```sql
 CREATE USER agent IDENTIFIED BY '...';
 GRANT SELECT ON dactopus.* TO agent;
-GRANT SELECT ON dactopus_website.* TO agent;
-GRANT SELECT ON dactopus_main_store.* TO agent;
 ```
 
-The views of the unions run as the user who asks, so the agent reads
-`clickhouse.database` and the database of every source, and no input
-database. Each command reads only
-the password it connects with: `serve` needs the variable
-`serve.password_env` names, `run` and `check` the one
+One grant is enough. The views of the unions read the tables of the
+sources as the user who built them, the user of `clickhouse.url`, so the
+agent needs `SELECT` on `clickhouse.database` and none on the databases
+of the sources or their inputs. What belongs to the agent's own user
+still applies: its grants (the executor leaves out of the model what
+they do not cover), its settings profile and its quotas. A row policy on
+a source's table applies as the user of `clickhouse.url`, not as the
+agent; a row restriction for one agent goes on the union's views, as a
+policy `TO` that agent.
+
+The views belong to the user of `clickhouse.url`, and ClickHouse does not
+drop a user that owns views. To change that user, run `dactopus run` as the
+new one first, which recreates the views under it; then the old one can
+be dropped.
+
+Each command reads only the password it connects with: `serve` needs the
+variable `serve.password_env` names, `run` and `check` the one
 `clickhouse.password_env` names. Without the `serve` section, `serve` runs
 as the user of `clickhouse.url`.
 

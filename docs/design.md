@@ -148,8 +148,9 @@ in the `serve` section. The password with write rights never reaches the
 settings of an AI client, and ClickHouse grants, settings profiles and
 quotas apply to the agent apart from the loads. Each command reads only
 the password it connects with. Verified on ClickHouse 26.9.5: read
-grants on the canonical database are enough. Since the unions the user
-also needs the databases of the sources (3 November 2026, below).
+grants on the canonical database are enough. Since the unions' views
+belong to the user of `clickhouse.url`, `SELECT` on the unions' database
+is enough again (3 November 2026, below).
 
 ## Checks are the one plugin interface
 
@@ -310,15 +311,45 @@ with 1. The zone check before loading still stops the whole run.
 
 ## The serve user and the views of the unions (3 November 2026)
 
+The decision: the serve user gets `SELECT` on `clickhouse.database` and
+nothing else, and the unions' views run as their owner.
+
 A view without `SQL SECURITY` runs as the user who asks
 (`default_normal_view_sql_security = INVOKER`; ClickHouse 26.9.27.3, 3
-November 2026). A `serve` user with `SELECT` on the unions' database
-alone gets "Not enough privileges" from a union's view, so it needs the
-database of each source as well. The sample and the README grant them
+November 2026). Under the unions of models library v0.9.0 the serve user
+therefore needed `SELECT` on the database of each source as well, granted
 database by database: `GRANT SELECT ON dactopus*.*` would also cover the
 input databases, which hold the store's raw rows, and a name in
 backticks is no pattern (``GRANT SELECT ON `dactopus*`.*`` grants a
-database named `dactopus*`). Views with `SQL SECURITY DEFINER` would
-need the unions' database alone: on the same server a user with `SELECT`
-on it read such a view and not the source's table under it. That is a
-change to the unions of the library.
+database named `dactopus*`). That list grew with every source and had to
+be kept in step with the configuration by hand. Release v0.10.0 builds
+the views with `+sql_security: definer` and `+definer: CURRENT_USER`, so
+the owner is the user who built them, the user of `clickhouse.url`, and
+the floor of the runner is v0.10.0.
+
+Facts, verified on ClickHouse 26.9.27.3 on the Mac mini stand, 3
+November 2026:
+
+- The user who builds the views needs no new right.
+- `DROP USER` of the owner fails (code 630, `HAVE_DEPENDENT_OBJECTS`)
+  while it owns views. After `dactopus run` as another user, which
+  recreates every view with that user as its owner, the first owner can
+  be dropped. Ten of ten views of the commerce union changed owner that
+  way.
+- Revoking the owner's `SELECT` on the sources' databases breaks the
+  agent's questions through a union until the next run.
+- The agent's settings profile limits and quotas apply through the view.
+- A row policy on a source's table applies as the owner, not as the
+  agent. A row policy on a union's view applies to the user who asks: a
+  policy `USING source_id = 'nobody' TO agent` on the commerce union's
+  `orders` took the agent's count from 11 to 0 while the owner still
+  counted 11, and it survived the next build of the union. A
+  restriction for one agent goes on the union's views.
+- Views built by v0.9.0 and run again with v0.10.0, with no
+  `--full-refresh`, are recreated with `SQL SECURITY DEFINER`: 0 of 10
+  views had it before, 10 of 10 after.
+
+The test `test_the_serve_user_reads_the_unions_and_not_the_sources`
+builds the unions from the library and checks that their views are
+`SQL SECURITY DEFINER` and that a user with `SELECT` on the unions'
+database alone reads them and no source database.
