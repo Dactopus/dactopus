@@ -69,6 +69,26 @@ def no_system_zones():
     zoneinfo.reset_tzpath()
 
 
+def drop_sources(client, prefix):
+    """The databases of the sources of an installation under prefix."""
+    for (name,) in client.query(
+        "SELECT name FROM system.databases WHERE startsWith(name, {p:String})",
+        parameters={"p": f"{prefix}_"},
+    ).result_rows:
+        client.command(f"DROP DATABASE IF EXISTS `{name}`")
+
+
+def load_fixture(client, library, package, database):
+    """The package's input tables with the library's hand-written rows."""
+    from dactopus import clickhouse as ch
+
+    ch.create_input(client, library, package, database)
+    script = (library / "tests" / package / "fixture.sql").read_text()
+    for statement in ch._COMMENT.sub("", script).split(";"):
+        if statement.strip():
+            client.command(statement, parameters={"db": database})
+
+
 @pytest.fixture(scope="session")
 def models_library():
     """The models library release, downloaded once into the user's cache."""

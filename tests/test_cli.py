@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from clickhouse_connect.driver.exceptions import DatabaseError
+from conftest import drop_sources, load_fixture
 
 from dactopus import cli, config, library
 from dactopus.cli import COMMANDS, main
@@ -248,26 +249,6 @@ def test_run_rebuilds_the_named_sources_after_the_usual_load(tmp_path, monkeypat
     ]
 
 
-def _drop(client, prefix):
-    """The databases of the sources of an installation under prefix."""
-    for (name,) in client.query(
-        "SELECT name FROM system.databases WHERE startsWith(name, {p:String})",
-        parameters={"p": f"{prefix}_"},
-    ).result_rows:
-        client.command(f"DROP DATABASE IF EXISTS `{name}`")
-
-
-def _fixture(client, library, package, database):
-    """The package's input tables with the library's hand-written rows."""
-    from dactopus import clickhouse as ch
-
-    ch.create_input(client, library, package, database)
-    script = (library / "tests" / package / "fixture.sql").read_text()
-    for statement in ch._COMMENT.sub("", script).split(";"):
-        if statement.strip():
-            client.command(statement, parameters={"db": database})
-
-
 def test_check_builds_the_report_over_the_library_fixtures(
     clickhouse, models_library, sample, tmp_path, capsys
 ):
@@ -288,7 +269,7 @@ def test_check_builds_the_report_over_the_library_fixtures(
     cfg = config.load(path)
     try:
         for source in cfg.sources.values():
-            _fixture(client, models_library, source.package, source.input_database)
+            load_fixture(client, models_library, source.package, source.input_database)
         raw = cfg.sources["main_store"].input_database
         client.command(
             f"ALTER TABLE `{raw}`.orders UPDATE loaded_at = now64(6) WHERE 1 "
@@ -300,7 +281,7 @@ def test_check_builds_the_report_over_the_library_fixtures(
             build.build(cfg, models_library, build.union_key(union))
         assert main(["check", "--config", str(path)]) == 1
     finally:
-        _drop(client, database)
+        drop_sources(client, database)
     out = capsys.readouterr()
     text = (cfg.workdir / "report.md").read_text()
     assert text in out.out
@@ -358,7 +339,7 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
 
     try:
         for source in cfg.sources.values():
-            _fixture(client, models_library, source.package, source.input_database)
+            load_fixture(client, models_library, source.package, source.input_database)
         for _ in range(2):  # the first build, then an incremental run over the same input
             for label in tables:
                 build.build(cfg, models_library, label)
@@ -370,7 +351,7 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
             for label in tables
         }
     finally:
-        _drop(client, database)
+        drop_sources(client, database)
     assert args["main_store"]["full_refresh"] is True
     assert "full_refresh" not in args["website"]
     assert all(before[t] for t in before)
