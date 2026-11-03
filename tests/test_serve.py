@@ -3,6 +3,7 @@ from urllib.parse import unquote, urlsplit
 
 import pytest
 import yaml
+from conftest import drop_sources, load_fixture
 from dactopus_ossie_clickhouse import load_model
 
 from dactopus import config, serve
@@ -223,36 +224,69 @@ def test_serve_user_with_read_grants_is_enough(tmp_path, clickhouse, server_url)
         server.command(f"DROP USER IF EXISTS `{user}`")
 
 
-def test_a_union_view_reads_as_the_serve_user(tmp_path, clickhouse, server_url):
-    """A union's view runs as the user who asks (ClickHouse 26.9.27, 2026-11-03),
-    so the serve user needs the source's database as well as the unions'."""
+def test_the_serve_user_reads_the_unions_and_not_the_sources(
+    tmp_path, clickhouse, models_library, sample, server_url
+):
+    """The unions the runner builds from the library read the sources as their owner
+    (SQL SECURITY DEFINER, v0.10.0; ClickHouse 26.9.27, 2026-11-03), so a user with
+    SELECT on clickhouse.database alone is served and reads no source database."""
     from clickhouse_connect.driver.exceptions import DatabaseError
-    from dactopus_ossie_clickhouse.executor import connect
+    from dactopus_ossie_clickhouse.executor import Executor, connect
+
+    from dactopus import build, library
 
     server, database = clickhouse
-    store, user, secret = f"{database}_main_store", f"{database}_agent", "agent-secret"
-    server.command(f"CREATE DATABASE `{database}`")
-    server.command(f"CREATE DATABASE `{store}`")
-    server.command(f"CREATE USER `{user}` IDENTIFIED BY '{secret}'")
+    user, secret = f"{database}_agent", "agent-secret"
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(sample.replace("database: dactopus\n", f"database: {database}\n"))
+    cfg = config.load(path)
     try:
-        server.command(
-            f"CREATE TABLE `{store}`.orders (order_id Int64) ENGINE = MergeTree ORDER BY order_id"
-        )
-        server.command(f"INSERT INTO `{store}`.orders VALUES (1), (2)")
-        server.command(f"CREATE VIEW `{database}`.orders AS SELECT * FROM `{store}`.orders")
+        for source in cfg.sources.values():
+            load_fixture(server, models_library, source.package, source.input_database)
+        for label in cfg.sources:
+            build.build(cfg, models_library, label)
+        unions = library.unions_of(cfg, models_library)
+        for union in unions:
+            build.build(cfg, models_library, build.union_key(union))
+
+        views = [
+            name
+            for (name,) in server.query(
+                "SELECT name FROM system.tables WHERE database = {db:String} AND engine = 'View'",
+                parameters={"db": database},
+            ).result_rows
+        ]
+        assert "orders" in views and "events" in views
+        for view in views:
+            shown = server.query(f"SHOW CREATE TABLE `{database}`.`{view}`").result_rows[0][0]
+            assert "SQL SECURITY DEFINER" in shown, view
+
+        server.command(f"CREATE USER `{user}` IDENTIFIED BY '{secret}'")
         server.command(f"GRANT SELECT ON `{database}`.* TO `{user}`")
-        cfg = _config(
-            tmp_path,
+        (tmp_path / "serve").mkdir()
+        served = _config(
+            tmp_path / "serve",
             server_url,
             environ={"AGENT_PASSWORD": secret},
             database=database,
             serve_section={"user": user, "password_env": "AGENT_PASSWORD"},
         )
-        client = connect(serve.url(cfg))
-        with pytest.raises(DatabaseError, match="Not enough privileges"):
-            client.query("SELECT count() FROM orders")
-        server.command(f"GRANT SELECT ON `{store}`.* TO `{user}`")
-        assert client.query("SELECT count() FROM orders").result_rows == [(2,)]
+        client = connect(serve.url(served))
+        assert client.query("SELECT currentUser()").result_rows == [(user,)]
+        [(orders,)] = client.query("SELECT count() FROM orders").result_rows
+        assert orders > 0
+        for source in cfg.sources.values():
+            table = library.deployment(cfg.models, models_library, source.package).daily[0].table
+            with pytest.raises(DatabaseError, match="Not enough privileges"):
+                client.query(f"SELECT count() FROM `{source.database}`.`{table}`")
+
+        # The executor leaves out of the model what the user may not read: for this
+        # user it leaves out nothing of the unions' models.
+        for file in serve.model_files(cfg, models_library):
+            executor = Executor(client, load_model(file))
+            assert [d.name for d in executor.model.datasets] == [
+                d.name for d in executor.full_model.datasets
+            ], file.name
     finally:
         server.command(f"DROP USER IF EXISTS `{user}`")
-        server.command(f"DROP DATABASE IF EXISTS `{store}`")
+        drop_sources(server, database)
