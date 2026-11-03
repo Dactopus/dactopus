@@ -22,8 +22,12 @@ from .config import Config, ConfigError, Models, Source
 
 ARCHIVE_URL = "https://github.com/Dactopus/dactopus-data-models/archive/refs/tags/{version}.tar.gz"
 
+# The oldest release the runner reads: the unions' views of a release before it
+# run as the user who asks, so the serve user would need the sources' databases.
+LIBRARY_SINCE = "v0.10.0"
+
 # The first release with labels (the role source_id) and unions.
-LIBRARY_SINCE = "v0.9.0"
+_UNIONS_SINCE = "v0.9.0"
 
 Fetch = Callable[[str], bytes]
 
@@ -76,6 +80,7 @@ def resolve(models: Models, cache: Path | None = None, fetch: Fetch = _download)
     if models.path is not None:
         return models.path
     cache = cache_dir() if cache is None else cache
+    _floor(models)
     root = cache / models.version
     if (root / "sources").is_dir():
         return root
@@ -212,6 +217,19 @@ def unions_of(config: Config, root: Path) -> dict[Union, list[Source]]:
     return found
 
 
+def _version(tag: str) -> tuple[int, ...]:
+    return tuple(int(number) for number in tag.removeprefix("v").split("."))
+
+
+def _floor(models: Models) -> None:
+    """Refuse a release older than LIBRARY_SINCE; a checkout cannot be compared."""
+    if models.version is not None and _version(models.version) < _version(LIBRARY_SINCE):
+        raise LibraryError(
+            f"The models library {models.version} is older than {LIBRARY_SINCE}, the first "
+            f"the runner reads; set models.version to {LIBRARY_SINCE} or later."
+        )
+
+
 def _where(models: Models) -> str:
     return models.version if models.path is None else f"at {models.path}"
 
@@ -228,10 +246,11 @@ def check(config: Config, root: Path) -> None:
     The runner sets the variables of the roles input_database, source_id
     and time_zone, so a source's vars may not.
     """
+    _floor(config.models)
     if not (root / "unions").is_dir():
         raise LibraryError(
             f"The models library {_where(config.models)} has no unions/, which came in "
-            f"{LIBRARY_SINCE} with the labels of the sources; {_upgrade(config.models)}."
+            f"{_UNIONS_SINCE} with the labels of the sources; {_upgrade(config.models)}."
         )
     served = {union.model for union in union_deployments(config.models, root)}
     for label, source in config.sources.items():
