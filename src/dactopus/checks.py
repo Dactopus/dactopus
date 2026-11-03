@@ -630,12 +630,12 @@ def time_zone(client: Client, config: Config) -> list[Finding]:
         expected = f"every row on its day in {zone}"
         declared = _deployment(config, source)
         fixed = declared.zone is not None
-        built_in_zone = "time_zone" in declared.vars or fixed
+        built_in_zone = "time_zone" in declared.vars
         for counted in declared.daily:
             if counted.time is None:
                 continue
             table = counted.table
-            days = None if "time_zone" in declared.vars else WEEK * (PAST_WEEKS + 1)
+            days = None if built_in_zone else WEEK * (PAST_WEEKS + 1)
             found = partial(Finding, "time zone", table, expected=expected, source=label)
             try:
                 off = misdated(client, source.database, counted, zone, days)
