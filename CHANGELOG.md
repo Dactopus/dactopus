@@ -7,6 +7,29 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+### Changed
+
+- The models library v0.12.2 or later: an earlier release is refused
+  before anything runs. The sample configuration and the tests use
+  v0.12.2. Sources built by a release before v0.12.0, and GA4 and
+  Sensor.Community sources built before v0.12.2, need `dactopus run
+  --full-refresh` once: their first incremental build stops until then
+  (README, "Upgrading from 0.3").
+- dactopus-ossie-clickhouse 0.14, which `serve` runs.
+- A source's tables built with other settings than the run's, its zone
+  or its label, stop that source's build in its package, before a row is
+  touched; the other sources go on. The report names the table, each
+  setting with its old and new value, and `dactopus run --full-refresh
+  <label>`, where it showed the package's dbt command.
+
+### Removed
+
+- The count, before loading, of the rows of a source's tables on another
+  day in its zone, which stopped the whole run. It missed a change of
+  zone in a store without orders near midnight; the settings guard of
+  the models library replaces it. The `time_zone` check of the report
+  stays.
+
 ## [0.3.0] - 2026-11-03
 
 ### Added

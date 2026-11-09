@@ -321,35 +321,3 @@ def check_unions(client: Client, config: Config, library: Path) -> None:
             f"({listed}), and a union would replace those it has the name of with views. "
             "Give clickhouse.database another name, or drop the old tables if nothing reads them."
         )
-
-
-def check_zone(client: Client, config: Config, library: Path, refresh: set[str]) -> None:
-    """Refuse to build over tables built in a zone other than the source's.
-
-    The incremental models of a package with a time zone variable rebuild
-    only the rows that changed, so a build after the zone changed would
-    leave the tables with days of both zones. A source rebuilt with
-    --full-refresh is not counted.
-    """
-    found: dict[str, list[str]] = {}
-    for label, source in config.sources.items():
-        declared = deployment(config.models, library, source.package)
-        if "time_zone" not in declared.vars or label in refresh:
-            continue
-        for counted in declared.daily:
-            if counted.time is None:
-                continue
-            off = misdated(client, source.database, counted, source.timezone)
-            if off.rows:
-                found.setdefault(label, []).append(
-                    f"{off.rows:,} of {off.of:,} rows of {counted.table} ({label}) fall on "
-                    f"another day in {source.timezone}"
-                )
-    if found:
-        labels = " ".join(found)
-        tables = "; ".join(t for ts in found.values() for t in ts)
-        raise BuildError(
-            f"build: the tables of {', '.join(found)} were built in a time zone other than "
-            f"the source's: {tables}. Run `dactopus run --full-refresh {labels}` once to "
-            "rebuild them; until then the agent keeps answering from the current tables."
-        )

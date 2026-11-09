@@ -24,11 +24,15 @@ from dactopus.build import Misdated
 # and freshness within, past and without its source table. The build stopped
 # by a model whose columns changed (`on_schema_change: fail`) was recorded
 # on 2026-10-23 with dbt-clickhouse 1.10.3 over v0.5.3, by dropping a column
-# of the built `orders`; its nodes are those of the manifest.
+# of the built `orders`; its nodes are those of the manifest. The build stopped
+# by the settings guard of v0.12.2 is that file with the message dbt 1.11.16
+# gave the guarded model order_lines on 2026-11-09, after the source's zone
+# changed; orders and refunds, which read it, are skipped
+# (test_cli.py, test_a_changed_zone_stops_the_source_and_names_the_full_refresh).
 FIXTURES = Path(__file__).parent / "fixtures" / "dbt" / "shopify"
 
 # The deployment.yml of the packages and unions of dactopus-data-models
-# v0.10.0, and a package without vars.input_database.
+# v0.12.2, and a package without vars.input_database.
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 # The day after the latest day of _daily(date(2026, 10, 20), ...), at noon.
@@ -155,6 +159,62 @@ def test_a_model_whose_columns_changed_names_the_full_refresh(tmp_path):
     )
     assert _count(findings)["skip"] == 27
     assert checks.failed(findings)
+
+
+def test_a_model_built_with_other_settings_names_the_full_refresh(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_settings_changed.json")
+    findings = _dbt(cfg)
+    [error] = [f for f in findings if f.severity == "error"]
+    assert error.object == "order_lines"
+    assert error.sentence == (
+        "order_lines was not built with the settings of this run (shopify_timezone was "
+        '"UTC", is "America/New_York"); run `dactopus run --full-refresh shopify` once to '
+        "rebuild it from the input. Until then the source's tables stay as they were."
+    )
+    assert checks.failed(findings)
+
+
+def _settings_message(cfg, message):
+    """The guarded model's message in the recorded results replaced by message."""
+    path = cfg.workdir / "shopify" / "target" / "run_results.json"
+    results = json.loads(path.read_text())
+    for result in results["results"]:
+        if result["status"] == "error":
+            result["message"] = message
+    path.write_text(json.dumps(results))
+
+
+def test_a_value_with_parentheses_is_named_whole(tmp_path):
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_settings_changed.json")
+    _settings_message(
+        cfg,
+        "Compilation Error in model order_lines (models/order_lines.sql)\n  `db`.`order_lines` "
+        'was not built with the settings of this run (meta_key was "", is "_num (x): y"; '
+        'shopify_timezone was "UTC", is "Asia/Tokyo"): run dbt build --full-refresh once '
+        "(package README, Changing a setting)\n"
+        "  > called by model order_lines (models/order_lines.sql)",
+    )
+    [error] = [f for f in _dbt(cfg) if f.severity == "error"]
+    assert error.sentence.startswith(
+        'order_lines was not built with the settings of this run (meta_key was "", is '
+        '"_num (x): y"; shopify_timezone was "UTC", is "Asia/Tokyo"); run '
+    )
+
+
+def test_a_settings_stop_without_the_variables_still_names_the_full_refresh(tmp_path):
+    # Only the phrase is the library's contract; the text around it may change.
+    cfg = _config(tmp_path)
+    _target(cfg, run_results="run_results_build_settings_changed.json")
+    _settings_message(
+        cfg, "order_lines was not built with the settings of this run (x was 1, is 2); redo"
+    )
+    [error] = [f for f in _dbt(cfg) if f.severity == "error"]
+    assert error.sentence.startswith(
+        "order_lines was not built with the settings of this run; run "
+        "`dactopus run --full-refresh shopify` once"
+    )
 
 
 def test_results_that_ran_nothing_are_left_out(tmp_path):

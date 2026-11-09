@@ -98,8 +98,9 @@ def _run(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
     refresh = full_refresh(args.full_refresh, cfg)
     root = _library(cfg)
-    # Refused before anything is written: a zone other than the shop's, or
-    # canonical tables built in another zone.
+    # Refused before anything is written: a zone other than the shop's. Tables
+    # built in another zone stop the source's build in its package (the
+    # settings guard of the models library).
     tokens: dict[str, str] = {}
     for label, source in cfg.sources.items():
         if isinstance(source.loader, config.Shopify):
@@ -111,12 +112,6 @@ def _run(args: argparse.Namespace) -> int:
                 library.source_zone_setting(cfg, root, source),
             )
     client = _connect(cfg)
-    with _step(
-        "build: counting the days of the sources' tables",
-        "check that the ClickHouse user can read the databases of the sources and run "
-        "again; nothing has been loaded yet.",
-    ):
-        build.check_zone(client, cfg, root, refresh)
     with _step(
         "build: listing the tables of the unions' database",
         "check that the ClickHouse user can read system.tables and run again; nothing has "

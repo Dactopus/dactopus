@@ -45,9 +45,9 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
 
 def _sample(tmp_path, library=FIXTURE_LIBRARY):
     """The sample configuration (GA4 as website, Shopify as main_store) over a library checkout."""
-    assert "version: v0.10.0" in config.SAMPLE
+    assert "version: v0.12.2" in config.SAMPLE
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.10.0", f"path: {library}"))
+    path.write_text(config.SAMPLE.replace("version: v0.12.2", f"path: {library}"))
     return path
 
 
@@ -69,7 +69,7 @@ def test_a_library_before_labels_names_the_release(tmp_path, capsys):
     assert main(["check", "--config", str(_sample(tmp_path, bare))]) == 1
     assert (
         f"dactopus check: The models library at {bare} has no unions/, which came in v0.9.0 "
-        "with the labels of the sources; update the checkout at models.path to v0.10.0 or "
+        "with the labels of the sources; update the checkout at models.path to v0.12.2 or "
         "later." in capsys.readouterr().err
     )
 
@@ -79,13 +79,13 @@ def test_a_release_before_the_floor_is_refused_before_anything_runs(
     command, tmp_path, monkeypatch, capsys
 ):
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.10.0", "version: v0.9.0"))
+    path.write_text(config.SAMPLE.replace("version: v0.12.2", "version: v0.9.0"))
     monkeypatch.setattr(library, "_download", lambda url: pytest.fail("downloaded"))
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
     assert main([command, "--config", str(path)]) == 1
     assert capsys.readouterr().err == (
-        f"dactopus {command}: The models library v0.9.0 is older than v0.10.0, the first "
-        "the runner reads; set models.version to v0.10.0 or later.\n"
+        f"dactopus {command}: The models library v0.9.0 is older than v0.12.2, the first "
+        "the runner reads; set models.version to v0.12.2 or later.\n"
     )
 
 
@@ -98,7 +98,6 @@ def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
     monkeypatch.setattr(cli.shopify, "check_time_zone", lambda package, token, zone, setting: None)
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
-    monkeypatch.setattr(cli.build, "check_zone", lambda *args: None)
     monkeypatch.setattr(cli.build, "check_unions", lambda *args: None)
     monkeypatch.setattr(cli.clickhouse, "create_input", refuse)
     assert main(["run", "--config", str(path)]) == 1
@@ -110,7 +109,7 @@ def test_clickhouse_error_names_the_step(tmp_path, monkeypatch, capsys):
     assert "run again" in err
 
 
-def test_a_refused_count_of_the_days_says_nothing_was_loaded(tmp_path, monkeypatch, capsys):
+def test_a_refused_list_of_the_unions_tables_says_nothing_was_loaded(tmp_path, monkeypatch, capsys):
     path = _sample(tmp_path)
 
     def refuse(*args):
@@ -119,13 +118,13 @@ def test_a_refused_count_of_the_days_says_nothing_was_loaded(tmp_path, monkeypat
     monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
     monkeypatch.setattr(cli.shopify, "check_time_zone", lambda package, token, zone, setting: None)
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
-    monkeypatch.setattr(cli.build, "check_zone", refuse)
+    monkeypatch.setattr(cli.build, "check_unions", refuse)
     assert main(["run", "--config", str(path)]) == 1
     err = capsys.readouterr().err
-    assert "build: counting the days of the sources' tables: ClickHouse refused it" in err
+    assert "build: listing the tables of the unions' database: ClickHouse refused it" in err
     assert (
-        "check that the ClickHouse user can read the databases of the sources and run again; "
-        "nothing has been loaded yet." in err
+        "check that the ClickHouse user can read system.tables and run again; nothing has "
+        "been loaded yet." in err
     )
 
 
@@ -171,9 +170,6 @@ def test_full_refresh_of_an_unknown_label_is_refused_before_anything_runs(
 def _stub_run(monkeypatch, steps):
     """Every step of `run` recorded, none run."""
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
-    monkeypatch.setattr(
-        cli.build, "check_zone", lambda client, cfg, root, refresh: steps.append(("zone", refresh))
-    )
     monkeypatch.setattr(
         cli.build, "check_unions", lambda client, cfg, root: steps.append(("unions database",))
     )
@@ -236,7 +232,6 @@ def test_run_rebuilds_the_named_sources_after_the_usual_load(tmp_path, monkeypat
     assert main(["run", "--config", str(path), "--full-refresh", "main_store"]) == 0
     assert steps == [
         ("shop zone", "UTC", "timezone"),
-        ("zone", {"main_store"}),
         ("unions database",),
         ("input", "ga4", "dactopus_website_raw"),
         ("load", "ga4", "dactopus_website_raw"),
@@ -356,6 +351,57 @@ def test_full_refresh_rebuilds_the_named_package_from_the_input(
     assert "full_refresh" not in args["website"]
     assert all(before[t] for t in before)
     assert after == before
+
+
+def test_a_changed_zone_stops_the_source_and_names_the_full_refresh(
+    clickhouse, models_library, sample, tmp_path, monkeypatch
+):
+    """`run` after the zone of a store changed, over the library fixtures, loads stubbed out.
+
+    The package's settings guard stops the store's build before it touches a
+    row; the report names the runner's command, and the other source is
+    built. `run --full-refresh` with the store's label then builds it in the
+    new zone.
+    """
+    import json
+
+    from dactopus import build
+
+    client, database = clickhouse
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(sample.replace("database: dactopus\n", f"database: {database}\n"))
+    cfg = config.load(path)
+    monkeypatch.setattr(cli.ga4, "BigQueryExport", lambda settings: object())
+    monkeypatch.setattr(cli.ga4, "load", lambda *args: None)
+    monkeypatch.setattr(cli.shopify, "access_token", lambda settings: "t")
+    monkeypatch.setattr(cli.shopify, "check_time_zone", lambda package, token, zone, setting: None)
+    monkeypatch.setattr(cli.shopify, "graphql", lambda shop, token: object())
+    monkeypatch.setattr(cli.shopify, "load", lambda *args: None)
+    store = cfg.sources["main_store"].database
+    try:
+        for source in cfg.sources.values():
+            load_fixture(client, models_library, source.package, source.input_database)
+        main(["run", "--config", str(path)])
+        built = {t: _rows(client, store, t) for t in ("orders", "order_lines", "refunds")}
+        path.write_text(path.read_text().replace("timezone: UTC", "timezone: Asia/Tokyo", 1))
+        assert main(["run", "--config", str(path)]) == 1
+        stopped = (cfg.workdir / "report.md").read_text()
+        unchanged = {t: _rows(client, store, t) for t in built}
+        website = json.loads((build.target(cfg, "website") / "run_results.json").read_text())
+        main(["run", "--config", str(path), "--full-refresh", "main_store"])
+        rebuilt = (cfg.workdir / "report.md").read_text()
+    finally:
+        drop_sources(client, database)
+    # Each guarded model dbt reaches stops with its own error (in Shopify,
+    # order_lines; orders and refunds read it and are skipped).
+    assert (
+        ' was not built with the settings of this run (shopify_timezone was "UTC", is '
+        '"Asia/Tokyo"); run `dactopus run --full-refresh main_store` once to rebuild it '
+        "from the input." in stopped
+    )
+    assert unchanged == built
+    assert all(r["status"] != "error" for r in website["results"])
+    assert "was not built with the settings of this run" not in rebuilt
 
 
 def test_a_source_dbt_cannot_build_does_not_stop_the_others(tmp_path, monkeypatch, capsys):

@@ -17,7 +17,7 @@ def _base() -> dict:
     return {
         "clickhouse": {"url": "http://loader@db.local:18123", "database": "dactopus"},
         "timezone": "America/New_York",
-        "models": {"version": "v0.10.0"},
+        "models": {"version": "v0.12.2"},
         "sources": {
             "website": {
                 "package": "ga4",
@@ -38,7 +38,7 @@ def test_sample_loads(tmp_path):
     config.write_sample(path)
     loaded = config.load(path, environ={})
     assert loaded.clickhouse.database == "dactopus"
-    assert loaded.models.version == "v0.10.0"
+    assert loaded.models.version == "v0.12.2"
     assert [(s.label, s.package) for s in loaded.sources.values()] == [
         ("website", "ga4"),
         ("main_store", "shopify"),

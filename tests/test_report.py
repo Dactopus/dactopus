@@ -6,7 +6,7 @@ import yaml
 from dactopus import config, report
 from dactopus.checks import Finding, Volume
 
-# The deployment.yml of the packages and unions of dactopus-data-models v0.10.0.
+# The deployment.yml of the packages and unions of dactopus-data-models v0.12.2.
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 
 NOW = datetime(2026, 10, 22, 7, 30, tzinfo=UTC)

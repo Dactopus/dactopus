@@ -23,9 +23,13 @@ from .config import Config, ConfigError, Models, Source
 
 ARCHIVE_URL = "https://github.com/Dactopus/dactopus-data-models/archive/refs/tags/{version}.tar.gz"
 
-# The oldest release the runner reads: the unions' views of a release before it
-# run as the user who asks, so the serve user would need the sources' databases.
-LIBRARY_SINCE = "v0.10.0"
+# The oldest release the runner reads: the first whose every package with an
+# incremental model stops a run whose tables were built with other settings
+# (macros/settings.sql), the zone among them, so the runner does not count the
+# days of the tables before a build. The unions' views of a release before
+# v0.10.0 run as the user who asks, so the serve user would need the sources'
+# databases.
+LIBRARY_SINCE = "v0.12.2"
 
 # The first release with labels (the role source_id) and unions.
 _UNIONS_SINCE = "v0.9.0"

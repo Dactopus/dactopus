@@ -307,7 +307,8 @@ source without `woocommerce_currency`; the runner stopped there, with
 no report and the next sources unbuilt. It now passes dbt's output on,
 keeps the step and dbt's error next to the source's output, and goes on;
 the checks show the error with the package's message, and the run exits
-with 1. The zone check before loading still stops the whole run.
+with 1. The zone check before loading still stops the whole run (until
+9 November 2026: "The zone of the tables is the library's to guard").
 
 ## The serve user and the views of the unions (3 November 2026)
 
@@ -354,3 +355,35 @@ The test `test_the_serve_user_reads_the_unions_and_not_the_sources`
 builds the unions from the library and checks that their views are
 `SQL SECURITY DEFINER` and that a user with `SELECT` on the unions'
 database alone reads them and no source database.
+
+## The zone of the tables is the library's to guard (9 November 2026)
+
+The decision: the runner no longer counts, before a build, the rows of a
+source's daily tables that fall on another day in the source's zone, and
+reads the models library v0.12.2 or later. From that release every
+package with an incremental model records in its tables the values of
+the variables their rows depend on (the zone, the label), and a build
+with other values stops before it reads or deletes a row
+(`macros/settings.sql`, required of every package by the library's
+`tests/check_contracts.py`).
+
+Why: the count found a change of zone only through rows within the
+difference of the two zones from midnight, so a store without such
+orders passed it and kept tables with days of two zones. The record
+cannot miss a change, covers the other variables of a package (the
+currency of WooCommerce, the label of GA4), and protects a deployment
+of the packages without the runner. The count also stopped every source
+of the run; the guard stops the one whose settings changed.
+
+What stays in the runner: the comparison of the shop's zone with the
+source's before loading (Shopify), and the `time_zone` check of the
+report, which compares the days of a source's tables with the zone the
+configuration declares, as for a GA4 property in another zone.
+
+The report tells the guard's stop by the phrase `was not built with the
+settings of this run`, which the library keeps from release to release
+(its `docs/deployment.md`), and names `dactopus run --full-refresh
+<label>` in place of the dbt command in the package's message. With
+dbt-core 1.11.16 and dbt-clickhouse 1.10.3 on ClickHouse 26.9 (9
+November 2026), the stop is a model with `status: error` and the message
+"Compilation Error in model ...", and the nodes after it are skipped.
