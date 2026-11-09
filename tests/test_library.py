@@ -35,12 +35,12 @@ def test_release_is_downloaded_once(tmp_path):
         calls.append(url)
         return RELEASE
 
-    models = Models(version="v0.10.1", path=None)
+    models = Models(version="v0.12.3", path=None)
     root = library.resolve(models, cache=tmp_path, fetch=fetch)
-    assert root == tmp_path / "v0.10.1"
+    assert root == tmp_path / "v0.12.3"
     assert (root / "sources/ga4/input.sql").read_text() == "-- input"
     assert library.resolve(models, cache=tmp_path, fetch=fetch) == root
-    assert calls == [library.ARCHIVE_URL.format(version="v0.10.1")]
+    assert calls == [library.ARCHIVE_URL.format(version="v0.12.3")]
 
 
 def test_checkout_is_used_as_is(tmp_path):
@@ -68,7 +68,7 @@ def test_unreadable_archive_is_refused(tmp_path):
         library.resolve(Models("v9.9.9", None), cache=tmp_path, fetch=lambda url: b"<html>")
 
 
-# The deployment.yml of the packages and unions of v0.10.0, and a package
+# The deployment.yml of the packages and unions of v0.12.2, and a package
 # without vars.input_database.
 FIXTURE_LIBRARY = Path(__file__).parent / "fixtures" / "library"
 CHECKOUT = Models(version=None, path=FIXTURE_LIBRARY)
@@ -118,17 +118,17 @@ def test_a_package_without_the_file_names_what_to_raise(tmp_path):
         library.deployment(Models("v0.5.3", None), tmp_path, "woocommerce")
     assert str(found.value) == (
         "woocommerce: the models library has no sources/woocommerce/deployment.yml; "
-        "set models.version to v0.10.0 or later."
+        "set models.version to v0.12.2 or later."
     )
-    with pytest.raises(LibraryError, match="update the checkout at models.path to v0.10.0"):
+    with pytest.raises(LibraryError, match="update the checkout at models.path to v0.12.2"):
         library.deployment(Models(None, tmp_path), tmp_path, "woocommerce")
 
 
 def test_an_unknown_package_names_the_library_s_packages():
     with pytest.raises(LibraryError) as found:
-        library.deployment(Models("v0.10.0", None), FIXTURE_LIBRARY, "shopfy")
+        library.deployment(Models("v0.12.2", None), FIXTURE_LIBRARY, "shopfy")
     assert str(found.value) == (
-        "shopfy is not a package of the models library v0.10.0; its packages: broken, ga4, "
+        "shopfy is not a package of the models library v0.12.2; its packages: broken, ga4, "
         "sensor_community, shopify, woocommerce."
     )
 
@@ -242,8 +242,8 @@ def test_a_library_without_unions_is_refused(tmp_path):
     with pytest.raises(LibraryError) as found:
         _check(tmp_path, root=root)
     assert str(found.value) == (
-        "The models library v0.10.0 has no unions/, which came in v0.9.0 with the labels of "
-        "the sources; set models.version to v0.10.0 or later."
+        "The models library v0.12.2 has no unions/, which came in v0.9.0 with the labels of "
+        "the sources; set models.version to v0.12.2 or later."
     )
 
 
@@ -265,7 +265,7 @@ def test_a_package_without_the_label_role_is_refused(tmp_path):
     with pytest.raises(
         LibraryError,
         match="ga4: sources/ga4/deployment.yml maps no variable to the role source_id; set "
-        "models.version to v0.10.0 or later",
+        "models.version to v0.12.2 or later",
     ):
         _check(tmp_path, root=root)
 
@@ -280,7 +280,7 @@ def test_a_package_no_union_serves_is_refused(tmp_path):
     with pytest.raises(
         LibraryError,
         match="ga4: no union of the models library serves entities/web_analytics.yaml, so "
-        "website could not be served; set models.version to v0.10.0 or later",
+        "website could not be served; set models.version to v0.12.2 or later",
     ):
         _check(tmp_path, root=root)
 
@@ -338,13 +338,13 @@ def test_a_wrong_union_declaration_is_refused(tmp_path, text, message):
         library.union_deployments(Models(version=None, path=root), root)
 
 
-@pytest.mark.parametrize("version", ["v0.9.0", "v0.2.1", "v0.1.9"])
+@pytest.mark.parametrize("version", ["v0.12.1", "v0.10.0", "v0.9.0", "v0.2.1"])
 def test_a_release_before_the_floor_is_refused(tmp_path, version):
     with pytest.raises(LibraryError) as found:
-        _check(tmp_path, "version: v0.10.0", f"version: {version}")
+        _check(tmp_path, "version: v0.12.2", f"version: {version}")
     assert str(found.value) == (
-        f"The models library {version} is older than v0.10.0, the first the runner reads; "
-        "set models.version to v0.10.0 or later."
+        f"The models library {version} is older than v0.12.2, the first the runner reads; "
+        "set models.version to v0.12.2 or later."
     )
 
 
@@ -352,19 +352,19 @@ def test_a_release_before_the_floor_is_not_downloaded(tmp_path):
     def fetch(url):
         raise AssertionError("no download for a refused release")
 
-    with pytest.raises(LibraryError, match="older than v0.10.0"):
+    with pytest.raises(LibraryError, match="older than v0.12.2"):
         library.resolve(Models("v0.9.0", None), cache=tmp_path, fetch=fetch)
 
 
-@pytest.mark.parametrize("version", ["v0.10.0", "v0.10.1", "v0.11.0", "v1.0.0", "v0.100.0"])
+@pytest.mark.parametrize("version", ["v0.12.2", "v0.12.10", "v0.13.0", "v1.0.0", "v0.100.0"])
 def test_a_release_from_the_floor_is_accepted(tmp_path, version):
-    # Numbers are compared, not strings: v0.9.0 < v0.10.0 < v0.100.0.
-    _check(tmp_path, "version: v0.10.0", f"version: {version}")
+    # Numbers are compared, not strings: v0.12.2 < v0.12.10 < v0.100.0.
+    _check(tmp_path, "version: v0.12.2", f"version: {version}")
 
 
 def test_a_checkout_is_not_compared_to_the_floor(tmp_path):
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.10.0", f"path: {FIXTURE_LIBRARY}"))
+    path.write_text(config.SAMPLE.replace("version: v0.12.2", f"path: {FIXTURE_LIBRARY}"))
     library.check(config.load(path, environ={}), FIXTURE_LIBRARY)
 
 

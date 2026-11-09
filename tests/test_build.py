@@ -23,7 +23,7 @@ def _config(tmp_path, prefix="dactopus", models=None, label="shopify", source=No
                     "database": prefix,
                 },
                 "timezone": "America/New_York",
-                "models": models or {"version": "v0.10.0"},
+                "models": models or {"version": "v0.12.2"},
                 "sources": {label: source or {"package": "shopify", "shop": "s"}},
             }
         )
@@ -164,24 +164,6 @@ def test_a_missing_table_or_database_counts_as_empty(clickhouse):
     assert build.misdated(client, database, ORDERS, "UTC") == build.Misdated(0, 0)
     client.command(f"CREATE DATABASE `{database}`")
     assert build.misdated(client, database, ORDERS, "UTC") == build.Misdated(0, 0)
-
-
-def test_tables_built_in_another_zone_stop_the_build(clickhouse, tmp_path):
-    client, database = clickhouse
-    _orders(client, database, ("2026-10-21 02:30:00", "UTC"), ("2026-10-21 15:00:00", "UTC"))
-    # The source's database is the test's: <prefix>_<label>.
-    prefix, label = database.rsplit("_", 1)
-    cfg = _config(tmp_path, prefix, {"path": str(FIXTURE_LIBRARY)}, label=label)
-    with pytest.raises(build.BuildError) as refused:
-        build.check_zone(client, cfg, FIXTURE_LIBRARY, set())
-    assert str(refused.value) == (
-        f"build: the tables of {label} were built in a time zone other than the source's: "
-        f"1 of 2 rows of orders ({label}) fall on another day in America/New_York. Run "
-        f"`dactopus run --full-refresh {label}` once to rebuild them; until then the agent "
-        "keeps answering from the current tables."
-    )
-    # A full refresh of the source rebuilds them: nothing is counted.
-    build.check_zone(client, cfg, FIXTURE_LIBRARY, {label})
 
 
 # What dbt 1.11.16 printed for a WooCommerce source without woocommerce_currency,

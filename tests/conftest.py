@@ -9,7 +9,7 @@ from dactopus import config, library
 from dactopus.config import Models
 
 # The release the loaders are tested against; its input.sql is the contract.
-MODELS = Models(version="v0.10.0", path=None)
+MODELS = Models(version="v0.12.2", path=None)
 
 # The test server, named as clickhouse.url names it (user, host and port),
 # with the password in CLICKHOUSE_PASSWORD, the variable the sample

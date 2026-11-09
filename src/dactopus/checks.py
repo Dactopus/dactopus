@@ -110,6 +110,18 @@ _NOT_RUN = "no-op"
 # 1.10.3, 2026-10-23: `status: error`, and the nodes after it skipped).
 _SCHEMA_CHANGE = "The source and target schemas on this incremental model are out of sync"
 
+# What a package of the models library says, from v0.12.2, when an incremental
+# run finds its table built with other values of the variables the rows
+# depend on (the zone, the label): the phrase stays the same from release to
+# release (docs/deployment.md of the library). Its run stops before it reads
+# or deletes a row: dbt-core 1.11.16 with dbt-clickhouse 1.10.3 gives the
+# model `status: error`, "Compilation Error in model ...", and skips the
+# nodes after it (ClickHouse 26.9, 2026-11-09). The parentheses after the
+# phrase name each variable with its old and new value, and a value may hold
+# parentheses; the text after them is not the contract, so without
+# "): run " the report names no values.
+_SETTINGS_CHANGED = re.compile(r"was not built with the settings of this run(?: \((.*)\): run )?")
+
 
 def dbt_results(client: Client, config: Config) -> list[Finding]:
     """The models, tests and unit tests of the last dbt run of each source and union."""
@@ -157,7 +169,15 @@ def _dbt_finding(result: dict[str, Any], manifest: dict[str, Any], label: str) -
     observed = status if failures is None else f"{failures} rows"
     if kind == "model":
         table = manifest["nodes"][unique_id]["name"]
-        if severity == "error" and _SCHEMA_CHANGE in message:
+        settings = _SETTINGS_CHANGED.search(message) if severity == "error" else None
+        if settings is not None:
+            differ = f" ({settings[1]})" if settings[1] else ""
+            sentence = (
+                f"{table} was not built with the settings of this run{differ}; run "
+                f"`dactopus run --full-refresh {label}` once to rebuild it from the input. "
+                "Until then the source's tables stay as they were."
+            )
+        elif severity == "error" and _SCHEMA_CHANGE in message:
             sentence = (
                 f"{table} no longer has the columns its model builds (a release of the "
                 "models library changed them, or the table was changed by hand); run "

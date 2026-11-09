@@ -477,7 +477,7 @@ dev = [
 requires-dist = [
     { name = "certifi", specifier = ">=2024.2" },
     { name = "clickhouse-connect", extras = ["arrow"], specifier = ">=0.8" },
-    { name = "dactopus-ossie-clickhouse", extras = ["mcp"], specifier = "~=0.13.0" },
+    { name = "dactopus-ossie-clickhouse", extras = ["mcp"], specifier = "~=0.14.0" },
     { name = "dbt-clickhouse", specifier = "~=1.10.0" },
     { name = "dbt-core", specifier = "~=1.11.0" },
     { name = "google-auth", specifier = ">=2.30" },
@@ -494,7 +494,7 @@ dev = [
 
 [[package]]
 name = "dactopus-ossie-clickhouse"
-version = "0.13.0"
+version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "clickhouse-connect" },
@@ -502,9 +502,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlglot" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/7f/450298ad0edc9988acb53bf9c72c1f20b84ef82bde64d4ccab91dd5ac5fb/dactopus_ossie_clickhouse-0.13.0.tar.gz", hash = "sha256:4a99b16c408a95a6341b9f5c110831fa5bcf263b32d383bafb0fae5904b1af89", size = 291723, upload-time = "2026-11-01T05:10:06.617Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3d/03/8d34ae23204a8ea5833850d50bc7af4d073550602aef16743a7e48624b79/dactopus_ossie_clickhouse-0.14.0.tar.gz", hash = "sha256:174597bac61ffc294718a6a3fcf0622c69b0eed474e69ec4d00badf6aef13a48", size = 353038, upload-time = "2026-11-07T03:49:11.585Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/18/5dbc455e77a46ea2929469167eefeeca24750f2e92c1dbb9eb049af24b88/dactopus_ossie_clickhouse-0.13.0-py3-none-any.whl", hash = "sha256:89e4ed32de8cbce41c05b90f1104013d5514a4862cc63720dbfe805440b62bca", size = 83989, upload-time = "2026-11-01T05:10:05.079Z" },
+    { url = "https://files.pythonhosted.org/packages/91/bb/9dfaa6fc0d1e16a6461021390a6254a3f7e9f65d52713e835acc48580cef/dactopus_ossie_clickhouse-0.14.0-py3-none-any.whl", hash = "sha256:7a0b8edb9853e4998011a5ab10329929f5f4c652593f9a674b23441f80034fa3", size = 99830, upload-time = "2026-11-07T03:49:09.957Z" },
 ]
 
 [package.optional-dependencies]
@@ -1695,11 +1695,11 @@ wheels = [
 
 [[package]]
 name = "sqlglot"
-version = "30.27.0"
+version = "30.30.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5b/d8/322dee46e3fd283a3b249a22e4f369693f9aad9fdc714df66b815882e99e/sqlglot-30.27.0.tar.gz", hash = "sha256:10617b2beee196e88a310c6a5348482248bf10ac01c6ade22128bf4a690ec0ee", size = 6172431, upload-time = "2026-10-30T18:18:59.13Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/93/cedd3e86d49841c9509979dce3f4470243691fbd5c5227d2988d4903531e/sqlglot-30.30.0.tar.gz", hash = "sha256:b8e344042c85d7baa1d0d827127dfe1611ce9ac59bceab6fe370665baeb14ce7", size = 6186227, upload-time = "2026-11-06T13:54:57.133Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/88/fb7ce53c23e171ad059fd3a5ff6889399da2804cf0cfda2a10c64f32fdf7/sqlglot-30.27.0-py3-none-any.whl", hash = "sha256:b630686fc167762e20960ad3d007ad03d81af0a804c9f7d117f1fe06433c839e", size = 801972, upload-time = "2026-10-30T18:18:57.65Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/1f/2472bab660417265daa9cf6baf7870583bfbd447608b525b0071cc4c5448/sqlglot-30.30.0-py3-none-any.whl", hash = "sha256:06c4c212a7868c7dcff0fd0fda348dd3c5cbad40137b3083a70ecdfe22921cf9", size = 807597, upload-time = "2026-11-06T13:54:54.435Z" },
 ]
 
 [[package]]

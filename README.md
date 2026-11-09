@@ -105,15 +105,15 @@ runner passes a source's zone to its package when the package takes one
 
 For a Shopify source, `dactopus run` first reads the shop's zone and
 refuses one that differs from the source's; another name of the same
-zone (`UTC` for `Etc/UTC`) passes. It then counts, in the daily tables
-of each source whose package takes a zone, the rows whose date is not
-the day of their time in the source's zone. Such a row means the tables
-were built in another zone: the Shopify models are incremental, and a
-build after the zone changed would leave the orders it does not rebuild
-on the days of the old one. The run stops before loading, with the
-command that rebuilds the source, `dactopus run --full-refresh
-main_store`; the agent keeps answering from the current tables until
-then.
+zone (`UTC` for `Etc/UTC`) passes. The tables of a source record the
+settings their rows depend on, the zone and the label among them (the
+settings guard of the models library). The Shopify models are
+incremental, and a build after the zone changed would leave the orders
+it does not rebuild on the days of the old one, so that build stops
+before it touches a row. The other sources go on, and the report names
+the command that rebuilds the source, `dactopus run --full-refresh
+main_store`; the agent keeps answering from the tables as they were
+until then.
 
 ## Running
 
@@ -159,12 +159,36 @@ then builds the named sources (every source when none is named) with
 from the input the runner already holds, which keeps every version of
 every row. The input is not reloaded from the start: the usual
 incremental load adds only what is new. Run it once when a
-release of the models library changes a model's columns (the next
+release of the models library changes a model's columns or starts to
+record a setting of a source's tables, and when the time zone of a source
+whose package takes one changes (Shopify, WooCommerce): the next
 incremental build stops with an error, and the report names the table and
-this command) or when a source's time zone changes. Each table exists
+this command. Each table exists
 twice on disk until its rebuild ends: dbt builds the new table next to the
 old one and swaps them when it is complete, so `serve` keeps answering
 from the old table meanwhile.
+
+## Upgrading from 0.3
+
+The runner reads the models library v0.12.2 or later and refuses an
+earlier `models.version` before anything runs.
+
+- Run `dactopus run --full-refresh` once after setting
+  `models.version`, for the sources whose first incremental build
+  would stop: every source built by a release before v0.12.0, whose
+  tables lack its columns, and GA4 and Sensor.Community sources built
+  before v0.12.2, which record their label from that release on. Shopify
+  and WooCommerce sources built by v0.12.0 or v0.12.1 need none. The
+  rebuild reads the input already loaded: nothing is fetched again from
+  Shopify or BigQuery.
+- The user of `clickhouse.url` needs `ALTER MODIFY COMMENT` on the
+  tables it builds (part of `ALTER TABLE`): the record of the settings is
+  the table's comment.
+- 18 metrics of the commerce model moved to the datasets they count: a
+  question asks for `order_lines.items_sold`, not `items_sold`. The
+  numbers are the same; saved questions and agent prompts that name the
+  old ones need the new names (the library's changelog, 0.12.0, lists
+  them).
 
 ## Upgrading from 0.2
 
