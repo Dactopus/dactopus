@@ -1,7 +1,11 @@
 # Contributing
 
-Bug reports and questions are welcome as issues. Everything in this
-repository is in English: code, comments, commit messages, issues.
+Bug reports are welcome as issues. Everything in this repository is in
+English: code, comments, commit messages, issues.
+
+Questions about using it and ideas go to
+[Discussions](https://github.com/orgs/Dactopus/discussions); issues are for
+bugs and concrete changes.
 
 ## Setup
 
