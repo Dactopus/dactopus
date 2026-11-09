@@ -15,6 +15,9 @@ a minor release may change the command line and the configuration file.
   Sensor.Community sources built before v0.12.2, need `dactopus run
   --full-refresh` once: their first incremental build stops until then
   (README, "Upgrading from 0.3").
+- The user of `clickhouse.url` needs `ALTER MODIFY COMMENT` on the
+  tables it builds: the package records the settings of a table in its
+  comment.
 - dactopus-ossie-clickhouse 0.14, which `serve` runs.
 - A source's tables built with other settings than the run's, its zone
   or its label, stop that source's build in its package, before a row is

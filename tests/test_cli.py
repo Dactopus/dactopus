@@ -390,6 +390,9 @@ def test_a_changed_zone_stops_the_source_and_names_the_full_refresh(
         website = json.loads((build.target(cfg, "website") / "run_results.json").read_text())
         main(["run", "--config", str(path), "--full-refresh", "main_store"])
         rebuilt = (cfg.workdir / "report.md").read_text()
+        store_results = json.loads(
+            (build.target(cfg, "main_store") / "run_results.json").read_text()
+        )
     finally:
         drop_sources(client, database)
     # Each guarded model dbt reaches stops with its own error (in Shopify,
@@ -399,9 +402,12 @@ def test_a_changed_zone_stops_the_source_and_names_the_full_refresh(
         '"Asia/Tokyo"); run `dactopus run --full-refresh main_store` once to rebuild it '
         "from the input." in stopped
     )
+    assert all(built.values())
     assert unchanged == built
     assert all(r["status"] != "error" for r in website["results"])
     assert "was not built with the settings of this run" not in rebuilt
+    assert store_results["args"]["full_refresh"] is True
+    assert all(r["status"] not in ("error", "skipped") for r in store_results["results"])
 
 
 def test_a_source_dbt_cannot_build_does_not_stop_the_others(tmp_path, monkeypatch, capsys):
