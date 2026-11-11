@@ -88,9 +88,10 @@ def _connect(cfg: config.Config) -> clickhouse.Client:
 
 
 def _library(cfg: config.Config) -> Path:
-    """The library root, checked against the configured sources."""
+    """The library root, checked against the configured sources and the executor."""
     root = library.resolve(cfg.models)
     library.check(cfg, root)
+    serve.check(cfg, root)
     return root
 
 
