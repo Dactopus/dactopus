@@ -7,6 +7,8 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-11
+
 ### Added
 
 - Every command asks the executor, before its first step, whether it
@@ -275,7 +277,8 @@ The first release, a prototype.
   with the version to set. The vars of a package are checked against
   the file before any connection.
 
-[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Dactopus/dactopus/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Dactopus/dactopus/releases/tag/v0.2.1
