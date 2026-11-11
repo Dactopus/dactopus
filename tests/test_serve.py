@@ -320,6 +320,13 @@ def test_models_of_another_schema_version_name_the_upgrade(tmp_path):
     )
 
 
+def test_the_only_model_file_is_named_in_the_refusal(tmp_path):
+    cfg = _config(tmp_path, "http://default@127.0.0.1:8123", packages=("shopify",))
+    root = _served_library(tmp_path, version="0.2.0.dev0")
+    with pytest.raises(ServeError, match="does not read: entities/commerce.yaml: unsupported"):
+        serve.check(cfg, root)
+
+
 @pytest.mark.parametrize("command", ["run", "check", "serve"])
 def test_unreadable_models_stop_every_command_before_it_connects(
     command, tmp_path, monkeypatch, capsys
