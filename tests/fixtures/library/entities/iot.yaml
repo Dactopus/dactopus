@@ -1,0 +1,9 @@
+version: "0.3.0.dev0"
+name: iot
+datasets:
+  - name: readings
+    source: readings
+    primary_key: [reading_id]
+    fields:
+      - name: reading_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: reading_id}]}

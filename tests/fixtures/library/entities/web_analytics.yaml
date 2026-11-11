@@ -1,0 +1,9 @@
+version: "0.3.0.dev0"
+name: web_analytics
+datasets:
+  - name: sessions
+    source: sessions
+    primary_key: [session_id]
+    fields:
+      - name: session_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: session_id}]}

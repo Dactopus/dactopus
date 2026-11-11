@@ -45,9 +45,9 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
 
 def _sample(tmp_path, library=FIXTURE_LIBRARY):
     """The sample configuration (GA4 as website, Shopify as main_store) over a library checkout."""
-    assert "version: v0.12.2" in config.SAMPLE
+    assert "version: v0.13.0" in config.SAMPLE
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.12.2", f"path: {library}"))
+    path.write_text(config.SAMPLE.replace("version: v0.13.0", f"path: {library}"))
     return path
 
 
@@ -69,7 +69,7 @@ def test_a_library_before_labels_names_the_release(tmp_path, capsys):
     assert main(["check", "--config", str(_sample(tmp_path, bare))]) == 1
     assert (
         f"dactopus check: The models library at {bare} has no unions/, which came in v0.9.0 "
-        "with the labels of the sources; update the checkout at models.path to v0.12.2 or "
+        "with the labels of the sources; update the checkout at models.path to v0.13.0 or "
         "later." in capsys.readouterr().err
     )
 
@@ -79,13 +79,13 @@ def test_a_release_before_the_floor_is_refused_before_anything_runs(
     command, tmp_path, monkeypatch, capsys
 ):
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.12.2", "version: v0.9.0"))
+    path.write_text(config.SAMPLE.replace("version: v0.13.0", "version: v0.9.0"))
     monkeypatch.setattr(library, "_download", lambda url: pytest.fail("downloaded"))
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
     assert main([command, "--config", str(path)]) == 1
     assert capsys.readouterr().err == (
-        f"dactopus {command}: The models library v0.9.0 is older than v0.12.2, the first "
-        "the runner reads; set models.version to v0.12.2 or later.\n"
+        f"dactopus {command}: The models library v0.9.0 is older than v0.13.0, the first "
+        "the runner reads; set models.version to v0.13.0 or later.\n"
     )
 
 

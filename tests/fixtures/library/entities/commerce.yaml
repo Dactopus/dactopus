@@ -1,0 +1,9 @@
+version: "0.3.0.dev0"
+name: commerce
+datasets:
+  - name: orders
+    source: orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}

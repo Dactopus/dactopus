@@ -7,6 +7,29 @@ a minor release may change the command line and the configuration file.
 
 ## [Unreleased]
 
+### Added
+
+- Every command asks the executor, before its first step, whether it
+  reads the models of the library the configuration names, and stops
+  when it does not, with the executor's reason and the action: upgrade
+  dactopus, or set another `models.version`. A library whose models are
+  written for another version of the Ossie schema was loaded and built,
+  and refused only by `dactopus serve` (#29). README, "Models library
+  and runner", lists the releases that go together.
+
+### Changed
+
+- dactopus-ossie-clickhouse 0.16, which reads models of Ossie schema
+  `0.3.0.dev0`. An agent gets an answer to a metric of orders by a field
+  of their lines and to a filter on products in a question about orders,
+  which were refused, and `dactopus serve` writes to stderr how much of
+  the model the serve user is not served.
+- The models library v0.13.0 or later, the first written in that schema
+  version: an earlier release is refused before anything runs. The
+  sample configuration and the tests use v0.13.0. Run `dactopus run`
+  once before `dactopus serve`; no `--full-refresh` is needed (README,
+  "Upgrading from 0.4").
+
 ## [0.4.0] - 2026-11-09
 
 ### Changed

@@ -176,6 +176,10 @@ generated.
 - `serve` passes the model file of each union that has configured
   sources and the connection; the executor combines them. The runner
   does not read, merge or edit model files.
+- Whether a release of the library fits the runner is the executor's
+  answer: before its first step every command has the executor load the
+  model files `serve` would pass, and stops when it refuses them. The
+  runner compares the library's version only with its floor.
 - Memory: a daily GA4 table of a mid-size brand is hundreds of megabytes
   of Arrow. Keep it; read in `ReadRows` batches when a load exceeds it.
 - Errors name the step, the object and the next action in plain words;

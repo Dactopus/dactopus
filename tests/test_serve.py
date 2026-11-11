@@ -1,3 +1,4 @@
+from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -29,7 +30,7 @@ def _config(
     data = {
         "clickhouse": clickhouse,
         "timezone": "America/New_York",
-        "models": {"version": "v0.12.2"},
+        "models": {"version": "v0.13.0"},
         "sources": {name: all_packages[name] for name in packages},
     }
     if serve_section is not None:
@@ -152,9 +153,9 @@ def test_serve_hands_the_files_and_url_to_the_executor(tmp_path, monkeypatch):
 
 def test_serve_error_goes_to_stderr(tmp_path, monkeypatch, capsys):
     path = tmp_path / "dactopus.yaml"
-    assert "version: v0.12.2" in config.SAMPLE
+    assert "version: v0.13.0" in config.SAMPLE
     root = _library(tmp_path, files=[])
-    path.write_text(config.SAMPLE.replace("version: v0.12.2", f"path: {root}"))
+    path.write_text(config.SAMPLE.replace("version: v0.13.0", f"path: {root}"))
     assert main(["serve", "--config", str(path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -174,7 +175,7 @@ def test_models_of_both_packages_load_as_one(tmp_path, models_library):
 
 # The smallest model the executor serves: one table of the canonical database.
 _MODEL = """\
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: probe
 datasets:
   - name: orders
@@ -290,3 +291,51 @@ def test_the_serve_user_reads_the_unions_and_not_the_sources(
     finally:
         server.command(f"DROP USER IF EXISTS `{user}`")
         drop_sources(server, database)
+
+
+def _served_library(tmp_path: Path, version: str = "0.3.0.dev0") -> Path:
+    root = _library(tmp_path)
+    for number, name in enumerate(MODEL_FILES):
+        model = _MODEL.replace("0.3.0.dev0", version).replace("orders", f"orders_{number}")
+        (root / name).write_text(model.replace("name: probe", f"name: probe_{number}"))
+    return root
+
+
+def test_models_the_executor_reads_pass_the_check(tmp_path):
+    cfg = _config(tmp_path, "http://default@127.0.0.1:8123")
+    serve.check(cfg, _served_library(tmp_path))
+
+
+def test_models_of_another_schema_version_name_the_upgrade(tmp_path):
+    cfg = _config(tmp_path, "http://default@127.0.0.1:8123")
+    root = _served_library(tmp_path, version="0.2.0.dev0")
+    with pytest.raises(ServeError) as found:
+        serve.check(cfg, root)
+    assert str(found.value) == (
+        "The models library v0.13.0 has models that dactopus-ossie-clickhouse "
+        f"{version('dactopus-ossie-clickhouse')}, which this runner serves them with, does not "
+        "read: entities/commerce.yaml: unsupported version '0.2.0.dev0'; this build "
+        "supports '0.3.0.dev0' (and 1 more). Upgrade dactopus (uv tool upgrade dactopus), or set "
+        'models.version to a release this runner reads (README, "Models library and runner").'
+    )
+
+
+@pytest.mark.parametrize("command", ["run", "check", "serve"])
+def test_unreadable_models_stop_every_command_before_it_connects(
+    command, tmp_path, monkeypatch, capsys
+):
+    root = _served_library(tmp_path, version="0.2.0.dev0")
+    path = tmp_path / "dactopus.yaml"
+    path.write_text(config.SAMPLE.replace("version: v0.13.0", f"path: {root}"))
+    monkeypatch.setattr(
+        "dactopus.cli.clickhouse.connect", lambda settings: pytest.fail("connected")
+    )
+    monkeypatch.setattr(serve, "serve", lambda cfg, root: pytest.fail("served"))
+    assert main([command, "--config", str(path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert f"dactopus {command}: The models library at {root} has models that" in captured.err
+    assert (
+        "Upgrade dactopus (uv tool upgrade dactopus), or check out a release of the library "
+        "this runner reads at models.path"
+    ) in captured.err

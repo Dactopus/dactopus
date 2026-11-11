@@ -168,6 +168,44 @@ twice on disk until its rebuild ends: dbt builds the new table next to the
 old one and swaps them when it is complete, so `serve` keeps answering
 from the old table meanwhile.
 
+## Models library and runner
+
+A release of the runner reads the releases of the models library made
+for the dactopus-ossie-clickhouse it installs: the two agree on the
+version of the Ossie schema the models are written in.
+
+| Runner | Models library | dactopus-ossie-clickhouse |
+|---|---|---|
+| 0.5 | v0.13.0 or later | 0.16 |
+| 0.4 | v0.12.2 | 0.14 |
+
+Before its first step, every command asks the executor whether it reads
+the models of the library the configuration names. When it does not,
+the command stops with the executor's reason, and nothing is loaded or
+built. A library release newer than the runner reads needs `uv tool
+upgrade dactopus`; a release older than the runner reads needs a later
+`models.version`. A `models.version` earlier than v0.13.0 is refused
+by its number, before it is downloaded.
+
+## Upgrading from 0.4
+
+The runner reads the models library v0.13.0 or later and installs
+dactopus-ossie-clickhouse 0.16.
+
+- Set `models.version` to v0.13.0 and run `dactopus run` once before
+  `dactopus serve`: the build creates the view of orders by discount
+  code, and until it exists the model is served without that dataset.
+  No `--full-refresh` is needed, and the numbers of the other tables do
+  not change.
+- `dactopus serve` writes to stderr how many fields and metrics of the
+  model the serve user is not served, because a table is not built or
+  not granted. Restart it after a build that adds tables.
+- An agent gets an answer where it got a refusal: a metric of orders by
+  a field of their lines (`orders.order_count` by
+  `order_lines.product_id`), and a filter on products in a question
+  about orders. The changelogs of dactopus-ossie-clickhouse 0.15.0 and
+  0.16.0 define both.
+
 ## Upgrading from 0.3
 
 The runner reads the models library v0.12.2 or later and refuses an

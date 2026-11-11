@@ -387,3 +387,30 @@ settings of this run`, which the library keeps from release to release
 dbt-core 1.11.16 and dbt-clickhouse 1.10.3 on ClickHouse 26.9 (9
 November 2026), the stop is a model with `status: error` and the message
 "Compilation Error in model ...", and the nodes after it are skipped.
+
+## The executor says whether a library fits (11 November 2026)
+
+The decision: before its first step, every command loads the model
+files of the configured unions with the executor (`load_model`), and
+stops when the executor refuses them. The runner compares no version of
+the library with a range of its own, and the library declares no version
+of the runner. `LIBRARY_SINCE` stays as the floor: it refuses an old
+release by its number, before the download.
+
+Why: the models library v0.13.0 moved its models to Ossie schema
+`0.3.0.dev0`, which dactopus-ossie-clickhouse reads from 0.15.0 and
+which 0.14.0, the executor of runner 0.4.0, refuses. Runner 0.4.0 with
+that library loaded and built every source and failed only in `serve`.
+What the two must agree on is the schema version, and the executor is
+the one part that knows it. A range of tested releases in the runner
+would warn at every release of the library that changes nothing for it,
+and a minimum runner version in `deployment.yml` would make the library
+follow the runner's releases.
+
+What the check does not cover: a change of a package's input or of its
+declarations. Those are caught on the data, as before: a load stops on
+a column the input table lacks, and an incremental build stops on
+changed columns or settings and names `--full-refresh`.
+
+Verified with dactopus-ossie-clickhouse 0.16.0 on the models library
+v0.13.0 and on a model of schema `0.2.0.dev0` (11 November 2026).
