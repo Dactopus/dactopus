@@ -49,8 +49,12 @@ def check(cfg: Config, library: Path) -> None:
     try:
         load_model(*files)
     except ModelError as error:
-        # The executor names each file by its full path; the library is named below.
-        first = error.problems[0].replace(f"{library}{os.sep}", "")
+        # The executor names each file by its full path, and a single file not
+        # at all; the library is named below.
+        first = error.problems[0]
+        if len(files) == 1 and str(files[0]) not in first:
+            first = f"{files[0]}: {first}"
+        first = first.replace(f"{library}{os.sep}", "")
         more = len(error.problems) - 1
         problems = first if not more else f"{first} (and {more} more)"
         models = cfg.models
