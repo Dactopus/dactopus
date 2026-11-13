@@ -161,8 +161,8 @@ def test_refunds_without_processed_at_are_refused_before_loading(shopify_input):
         f"shopify: the input table {database}.refunds has no processed_at column, the date of "
         "a refund since models library v0.7.2. With an older library, set models.version, or "
         "the checkout at models.path, to v0.7.2 or later. With v0.7.2 or later, the table is "
-        "older than the library: add the column as the library's changelog for 0.7.2 says "
-        "(https://github.com/Dactopus/dactopus-data-models/blob/main/CHANGELOG.md), then run "
+        "older than the library: add the column as the library's UPGRADING.md for 0.7.2 says "
+        "(https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#072), then run "
         "`dactopus run --full-refresh shopify`. Nothing has been loaded yet."
     )
     assert api.calls == []

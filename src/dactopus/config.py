@@ -410,7 +410,7 @@ timezone: UTC
 models:
   # A release of dactopus-data-models, downloaded once into ~/.cache/dactopus.
   # When a release changes a model's columns or starts to record a setting
-  # of a source's tables (its changelog says so), run
+  # of a source's tables (its UPGRADING.md says so), run
   # `dactopus run --full-refresh` once after changing it.
   version: v0.13.0
   # Or a checkout of the library, for development:

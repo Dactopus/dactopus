@@ -9,8 +9,11 @@ ClickHouse, builds the canonical e-commerce tables, checks them, and
 serves their [Apache Ossie](https://github.com/apache/ossie) models to AI
 agents over [MCP](https://modelcontextprotocol.io).
 
-A prototype; 0.1.0 is the first release. While the major version is 0, a
-minor release may change the command line and the configuration file.
+A prototype. While the major version is 0, a minor release may change
+the command line and the configuration file: what changed is in the
+[changelog](https://github.com/Dactopus/dactopus/blob/main/CHANGELOG.md),
+what an installation does about it in
+[UPGRADING.md](https://github.com/Dactopus/dactopus/blob/main/UPGRADING.md).
 
 ## How the parts fit
 
@@ -38,10 +41,9 @@ The `dactopus` command gets its own environment with dbt, the dbt
 ClickHouse adapter and the executor. The machine needs no ClickHouse
 binaries; the runner connects to the client's ClickHouse server over HTTP.
 
-`uv tool upgrade dactopus` updates it. An installation of 0.1.0 or
-0.1.1, which came from GitHub, moves to PyPI with
-`uv tool install --force --python 3.13 dactopus`: `uv tool upgrade`
-keeps it on the GitHub tag.
+`uv tool upgrade dactopus` updates it; the steps a release asks for
+are in
+[UPGRADING.md](https://github.com/Dactopus/dactopus/blob/main/UPGRADING.md).
 
 Then, in the folder of the installation:
 
@@ -137,11 +139,11 @@ orders only. Two Shopify stores name different environment variables in
 `client_id_env` and `client_secret_env`.
 
 A load writes into the input tables the models library's `input.sql`
-creates, and `input.sql` creates a table only if it is missing. When a
-release of the library adds a column to a table an earlier one created,
-the load stops before reading anything and names the table, the column
-and the library's changelog, which says how to add it: the Shopify
-refunds' `processed_at` of v0.7.2, the date a refund counts on.
+creates, and `input.sql` creates a table only if it is missing, so a
+column a later release adds is not in a table an earlier one created.
+For the Shopify refunds' `processed_at` of v0.7.2, the date a refund
+counts on, the load stops before reading anything and names the table,
+the column and the library's UPGRADING.md, which says how to add it.
 
 A source dbt cannot build, test or measure (a required variable of its
 package missing, say) does not stop the others: the report shows dbt's
@@ -186,64 +188,6 @@ built. A library release newer than the runner reads needs `uv tool
 upgrade dactopus`; a release older than the runner reads needs a later
 `models.version`. A `models.version` earlier than v0.13.0 is refused
 by its number, before it is downloaded.
-
-## Upgrading from 0.4
-
-The runner reads the models library v0.13.0 or later and installs
-dactopus-ossie-clickhouse 0.16.
-
-- Set `models.version` to v0.13.0 and run `dactopus run` once before
-  `dactopus serve`: the build creates the view of orders by discount
-  code, and until it exists the model is served without that dataset.
-  No `--full-refresh` is needed, and the numbers of the other tables do
-  not change.
-- `dactopus serve` writes to stderr how many fields and metrics of the
-  model the serve user is not served, because a table is not built or
-  not granted. Restart it after a build that adds tables.
-- An agent gets an answer where it got a refusal: a metric of orders by
-  a field of their lines (`orders.order_count` by
-  `order_lines.product_id`), and a filter on products in a question
-  about orders. The changelogs of dactopus-ossie-clickhouse 0.15.0 and
-  0.16.0 define both.
-
-## Upgrading from 0.3
-
-The runner reads the models library v0.12.2 or later and refuses an
-earlier `models.version` before anything runs.
-
-- Run `dactopus run --full-refresh` once after setting
-  `models.version`, for the sources whose first incremental build
-  would stop: every source built by a release before v0.12.0, whose
-  tables lack its columns, and GA4 and Sensor.Community sources built
-  before v0.12.2, which record their label from that release on. Shopify
-  and WooCommerce sources built by v0.12.0 or v0.12.1 need none. The
-  rebuild reads the input already loaded: nothing is fetched again from
-  Shopify or BigQuery.
-- The user of `clickhouse.url` needs `ALTER MODIFY COMMENT` on the
-  tables it builds (part of `ALTER TABLE`): the record of the settings is
-  the table's comment.
-- 18 metrics of the commerce model moved to the datasets they count: a
-  question asks for `order_lines.items_sold`, not `items_sold`. The
-  numbers are the same; saved questions and agent prompts that name the
-  old ones need the new names (the library's changelog, 0.12.0, lists
-  them).
-
-## Upgrading from 0.2
-
-The runner refuses a configuration of 0.2: write it again from
-`dactopus init`, with each entry of `packages` as a source under a
-label and `store.timezone` as `timezone`.
-
-- The input already loaded stays where it is: give each source
-  `input_database: dactopus_raw` (the old `clickhouse.input_database`),
-  and the next load is incremental. Sources of different packages may
-  share an input database; two of one package may not.
-- The canonical tables are built again, in the database of each source;
-  no `--full-refresh` is needed.
-- The old canonical tables are in `dactopus`, the database of the
-  unions. `dactopus run` refuses to build views over them before loading
-  anything: give `clickhouse.database` another name, or drop the old
-  tables if nothing reads them.
 
 ## Checks and the report
 
@@ -390,16 +334,10 @@ runner and what each was verified on:
 
 ## Development
 
-Python 3.11 to 3.13 and [uv](https://docs.astral.sh/uv/).
-
-```bash
-uv sync
-uv run pytest
-uv run ruff check src tests
-```
-
-See [CONTRIBUTING.md](https://github.com/Dactopus/dactopus/blob/main/CONTRIBUTING.md)
-and [AGENTS.md](https://github.com/Dactopus/dactopus/blob/main/AGENTS.md).
+Setup, tests and releases:
+[CONTRIBUTING.md](https://github.com/Dactopus/dactopus/blob/main/CONTRIBUTING.md);
+the rules the code follows:
+[AGENTS.md](https://github.com/Dactopus/dactopus/blob/main/AGENTS.md).
 
 ## License
 

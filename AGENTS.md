@@ -226,9 +226,22 @@ uv run dactopus serve --config dactopus.yaml   # MCP over stdio
 Issues and pull requests in this repository are opened by the
 maintainer, not by an agent on its own.
 
+## Documentation
+
+- Docs state the current state. History goes in `CHANGELOG.md`,
+  `UPGRADING.md` and `docs/design.md` only.
+- A change updates its page in the same pull request. One after which
+  an installation must act (its configuration, a grant, a
+  `--full-refresh`, a `models.version`) adds its steps under
+  `## Unreleased` in `UPGRADING.md`, created if absent.
+- `CHANGELOG.md` follows [Common Changelog](https://common-changelog.org)
+  and is written at release; a pull request leaves it alone. The rules:
+  `CONTRIBUTING.md`, "Changelog and upgrading".
+- `README.md` is the PyPI page; links in it, in `CHANGELOG.md` and in
+  `UPGRADING.md` are absolute.
+
 ## Repository status
 
-A prototype; 0.1.0 is the first release. Versions follow
-Semantic Versioning, the changelog follows Keep a Changelog, a release is
-the tag `vX.Y.Z` with the GitHub release titled `X.Y.Z`. Pull requests
-are merged with rebase.
+A prototype. Versions follow Semantic Versioning; a release is the tag
+`vX.Y.Z` with the GitHub release titled `X.Y.Z`. Pull requests are
+merged with rebase.

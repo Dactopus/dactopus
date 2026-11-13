@@ -41,7 +41,7 @@ FIRST_LOAD_SINCE = "2000-01-01T00:00:00Z"
 # fills: products came in v0.7.0, refunds.processed_at (the date Shopify's
 # reports count a refund on) in v0.7.2.
 LIBRARY_SINCE = "v0.7.2"
-LIBRARY_CHANGELOG = "https://github.com/Dactopus/dactopus-data-models/blob/main/CHANGELOG.md"
+LIBRARY_UPGRADING = "https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#072"
 
 MONEY = "{ shopMoney { amount } }"
 QUERY = f"""query ($cursor: String, $filter: String) {{
@@ -415,7 +415,7 @@ def _require_input(client: Client, database: str, label: str) -> None:
     A models library before v0.7.0 has no products table. One before
     LIBRARY_SINCE has no processed_at in refunds; neither has a refunds
     table that an older library created, as input.sql creates a table only
-    if it is missing. The library's changelog says how to add the column.
+    if it is missing. The library's UPGRADING.md says how to add the column.
     """
     if not client.command(f"EXISTS TABLE `{database}`.products"):
         raise LoadError(
@@ -434,8 +434,8 @@ def _require_input(client: Client, database: str, label: str) -> None:
             f"date of a refund since models library {LIBRARY_SINCE}. With an older "
             f"library, set models.version, or the checkout at models.path, to "
             f"{LIBRARY_SINCE} or later. With {LIBRARY_SINCE} or later, the table "
-            f"is older than the library: add the column as the library's changelog for "
-            f"{LIBRARY_SINCE.removeprefix('v')} says ({LIBRARY_CHANGELOG}), then run "
+            f"is older than the library: add the column as the library's UPGRADING.md for "
+            f"{LIBRARY_SINCE.removeprefix('v')} says ({LIBRARY_UPGRADING}), then run "
             f"`dactopus run --full-refresh {label}`. Nothing has been loaded yet."
         )
 
