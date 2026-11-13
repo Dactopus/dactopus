@@ -45,9 +45,9 @@ def test_command_without_configuration_points_to_init(command, tmp_path, capsys)
 
 def _sample(tmp_path, library=FIXTURE_LIBRARY):
     """The sample configuration (GA4 as website, Shopify as main_store) over a library checkout."""
-    assert "version: v0.13.0" in config.SAMPLE
+    assert "version: v0.13.1" in config.SAMPLE
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.13.0", f"path: {library}"))
+    path.write_text(config.SAMPLE.replace("version: v0.13.1", f"path: {library}"))
     return path
 
 
@@ -79,7 +79,7 @@ def test_a_release_before_the_floor_is_refused_before_anything_runs(
     command, tmp_path, monkeypatch, capsys
 ):
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.13.0", "version: v0.9.0"))
+    path.write_text(config.SAMPLE.replace("version: v0.13.1", "version: v0.9.0"))
     monkeypatch.setattr(library, "_download", lambda url: pytest.fail("downloaded"))
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
     assert main([command, "--config", str(path)]) == 1
@@ -167,6 +167,47 @@ def test_full_refresh_of_an_unknown_label_is_refused_before_anything_runs(
     )
 
 
+@pytest.mark.parametrize(
+    ("argv", "names"),
+    [
+        (["run"], None),
+        (["run", "--reload", "main_store"], ["main_store"]),
+    ],
+)
+def test_run_parses_the_reload_flag(argv, names):
+    assert cli._parser().parse_args(argv).reload == names
+
+
+@pytest.mark.parametrize(
+    "argv", [["run", "--reload"], ["check", "--reload", "main_store"], ["serve", "--reload", "x"]]
+)
+def test_reload_names_its_sources_and_only_run_takes_it(argv):
+    with pytest.raises(SystemExit) as exit_info:
+        cli._parser().parse_args(argv)
+    assert exit_info.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("label", "refusal"),
+    [
+        (
+            "website",
+            "--reload: website not a Shopify source; the runner reloads only Shopify. A GA4 "
+            "source rereads the days of ga4_lookback_days on every run; the input of a source "
+            "without a loader is written by the client.",
+        ),
+        ("shopify", "--reload: shopify not in the configuration; configured: website, main_store."),
+    ],
+)
+def test_reload_of_another_source_is_refused_before_anything_runs(
+    label, refusal, tmp_path, monkeypatch, capsys
+):
+    path = _sample(tmp_path)
+    monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: pytest.fail("connected"))
+    assert main(["run", "--config", str(path), "--reload", label]) == 1
+    assert capsys.readouterr().err == f"dactopus run: {refusal}\n"
+
+
 def _stub_run(monkeypatch, steps):
     """Every step of `run` recorded, none run."""
     monkeypatch.setattr(cli.clickhouse, "connect", lambda settings: object())
@@ -187,7 +228,14 @@ def _stub_run(monkeypatch, steps):
     )
     monkeypatch.setattr(cli.shopify, "graphql", lambda shop, token: object())
     monkeypatch.setattr(
-        cli.shopify, "load", lambda *args: steps.append(("load", "shopify", args[2], args[3]))
+        cli.shopify,
+        "load",
+        lambda *args, reload=False: steps.append(
+            ("reload" if reload else "load", "shopify", args[2], args[3])
+        ),
+    )
+    monkeypatch.setattr(
+        cli.shopify, "require_input", lambda *args: steps.append(("input checked", args[1]))
     )
     monkeypatch.setattr(
         cli.build,
@@ -242,6 +290,47 @@ def test_run_rebuilds_the_named_sources_after_the_usual_load(tmp_path, monkeypat
         ("build", "union-commerce", False),
         ("build", "union-web_analytics", False),
     ]
+
+
+def test_reload_loads_the_named_source_from_the_first_order_and_rebuilds_it(tmp_path, monkeypatch):
+    path = _sample(tmp_path)
+    steps = []
+    _stub_run(monkeypatch, steps)
+    assert main(["run", "--config", str(path), "--reload", "main_store"]) == 0
+    assert steps == [
+        ("shop zone", "UTC", "timezone"),
+        ("unions database",),
+        ("input", "ga4", "dactopus_website_raw"),
+        ("load", "ga4", "dactopus_website_raw"),
+        ("input", "shopify", "dactopus_main_store_raw"),
+        ("input checked", "dactopus_main_store_raw"),
+        ("reload", "shopify", "dactopus_main_store_raw", "main_store"),
+        ("build", "website", False),
+        ("build", "main_store", True),
+        ("build", "union-commerce", False),
+        ("build", "union-web_analytics", False),
+    ]
+
+
+def test_a_reload_that_stops_says_to_start_it_over(tmp_path, monkeypatch, capsys):
+    """A run without --reload would resume after the latest change, past the rest of the store."""
+    path = _sample(tmp_path)
+    _stub_run(monkeypatch, [])
+
+    def unreachable(*args, reload=False):
+        raise cli.shopify.LoadError(
+            "shopify: cannot reach main-store.myshopify.com (timed out); check the network and "
+            "run again."
+        )
+
+    monkeypatch.setattr(cli.shopify, "load", unreachable)
+    assert main(["run", "--config", str(path), "--reload", "main_store"]) == 1
+    assert capsys.readouterr().err == (
+        "dactopus run: shopify: cannot reach main-store.myshopify.com (timed out); check the "
+        "network and run again. After that, run `dactopus run --reload main_store` again: a "
+        "reload starts over from the first order, and a run without --reload would not finish "
+        "it.\n"
+    )
 
 
 def test_check_builds_the_report_over_the_library_fixtures(

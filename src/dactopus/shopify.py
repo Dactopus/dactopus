@@ -39,12 +39,31 @@ TABLES = (*ORDER_TABLES, "products")
 FIRST_LOAD_SINCE = "2000-01-01T00:00:00Z"
 # The first release of the models library whose Shopify input the load
 # fills: products came in v0.7.0, refunds.processed_at (the date Shopify's
-# reports count a refund on) in v0.7.2.
-LIBRARY_SINCE = "v0.7.2"
-LIBRARY_UPGRADING = (
-    "https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#"
-    + LIBRARY_SINCE.removeprefix("v").replace(".", "")
+# reports count a refund on) in v0.7.2, the billing address of orders in
+# v0.13.1.
+LIBRARY_SINCE = "v0.13.1"
+# The columns of the input a release added, in the order of the releases,
+# with what each holds and the run that fills them in the rows loaded
+# before: a rebuild when the load already read them, a reload when it did not.
+ADDED_COLUMNS = (
+    ("v0.7.2", "refunds", ("processed_at",), "the date of a refund", "--full-refresh"),
+    (
+        "v0.13.1",
+        "orders",
+        ("billing_country_code", "billing_province_code", "billing_city"),
+        "the address an order was billed to",
+        "--reload",
+    ),
 )
+
+
+def library_upgrading(release: str) -> str:
+    """The section of the models library's UPGRADING.md for a release."""
+    return (
+        "https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#"
+        + release.removeprefix("v").replace(".", "")
+    )
+
 
 MONEY = "{ shopMoney { amount } }"
 QUERY = f"""query ($cursor: String, $filter: String) {{
@@ -58,6 +77,7 @@ QUERY = f"""query ($cursor: String, $filter: String) {{
       currentTotalPriceSet {MONEY} totalTipReceivedSet {MONEY}
       originalTotalDutiesSet {MONEY} originalTotalAdditionalFeesSet {MONEY}
       discountCodes shippingAddress {{ countryCodeV2 provinceCode city zip }}
+      billingAddress {{ countryCodeV2 provinceCode city }}
       shippingLines(first: 50) {{ pageInfo {{ hasNextPage }} nodes {{
         discountedPriceSet {MONEY} taxLines {{ priceSet {MONEY} }} }} }}
       lineItems(first: 50) {{ pageInfo {{ hasNextPage }} nodes {{
@@ -286,6 +306,7 @@ def rows(order: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     oid, updated = int(o["legacyResourceId"]), _ts(o["updatedAt"])
     ship = _nodes(o["shippingLines"], "shipping lines")
     addr = o["shippingAddress"] or {}
+    bill = o["billingAddress"] or {}
     tables["orders"].append(
         {
             "id": oid,
@@ -318,6 +339,9 @@ def rows(order: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             "shipping_province_code": addr.get("provinceCode"),
             "shipping_city": addr.get("city"),
             "shipping_zip": addr.get("zip"),
+            "billing_country_code": bill.get("countryCodeV2"),
+            "billing_province_code": bill.get("provinceCode"),
+            "billing_city": bill.get("city"),
         }
     )
     for li in _nodes(o["lineItems"], "line items"):
@@ -412,13 +436,13 @@ def _pages(fetch: Fetch, field: str, filter: str):
         yield page["nodes"]
 
 
-def _require_input(client: Client, database: str, label: str) -> None:
+def require_input(client: Client, database: str, label: str) -> None:
     """Refuse an input the load cannot fill, before any load.
 
-    A models library before v0.7.0 has no products table. One before
-    LIBRARY_SINCE has no processed_at in refunds; neither has a refunds
-    table that an older library created, as input.sql creates a table only
-    if it is missing. The library's UPGRADING.md says how to add the column.
+    A models library before v0.7.0 has no products table, and one before a
+    release in ADDED_COLUMNS lacks its columns; so does a table an older
+    library created, as input.sql creates a table only if it is missing.
+    The library's UPGRADING.md says how to add the columns.
     """
     if not client.command(f"EXISTS TABLE `{database}`.products"):
         raise LoadError(
@@ -426,20 +450,24 @@ def _require_input(client: Client, database: str, label: str) -> None:
             f"models.version, or the checkout at models.path, to {LIBRARY_SINCE} or later; "
             "nothing has been loaded yet."
         )
-    found = client.command(
-        "SELECT count() FROM system.columns WHERE database = {db:String} "
-        "AND table = 'refunds' AND name = 'processed_at'",
-        parameters={"db": database},
-    )
-    if not found:
+    for release, table, columns, holds, run in ADDED_COLUMNS:
+        found = client.query(
+            "SELECT name FROM system.columns WHERE database = {db:String} "
+            "AND table = {t:String} AND name IN {c:Array(String)}",
+            parameters={"db": database, "t": table, "c": list(columns)},
+        ).result_rows
+        if len(found) == len(columns):
+            continue
+        listed = ", ".join(columns)
+        plural = "column" if len(columns) == 1 else "columns"
         raise LoadError(
-            f"shopify: the input table {database}.refunds has no processed_at column, the "
-            f"date of a refund since models library {LIBRARY_SINCE}. With an older "
-            f"library, set models.version, or the checkout at models.path, to "
-            f"{LIBRARY_SINCE} or later. With {LIBRARY_SINCE} or later, the table "
-            f"is older than the library: add the column as the library's UPGRADING.md for "
-            f"{LIBRARY_SINCE.removeprefix('v')} says ({LIBRARY_UPGRADING}), then run "
-            f"`dactopus run --full-refresh {label}`. Nothing has been loaded yet."
+            f"shopify: the input table {database}.{table} has no {listed} {plural}, "
+            f"{holds} since models library {release}. With an older library, set "
+            f"models.version, or the checkout at models.path, to {LIBRARY_SINCE} or later. "
+            f"With {LIBRARY_SINCE} or later, the table is older than the library: add the "
+            f"{plural} as the library's UPGRADING.md for {release.removeprefix('v')} says "
+            f"({library_upgrading(release)}), then run `dactopus run {run} {label}`. "
+            "Nothing has been loaded yet."
         )
 
 
@@ -448,19 +476,24 @@ def _insert(client: Client, database: str, table: str, rows: list[dict[str, Any]
     client.raw_insert(f"`{database}`.`{table}`", insert_block=block, fmt="JSONEachRow")
 
 
-def load(client: Client, fetch: Fetch, database: str, label: str) -> dict[str, int]:
+def load(
+    client: Client, fetch: Fetch, database: str, label: str, reload: bool = False
+) -> dict[str, int]:
     """Append the orders and products updated since the last load, page by page.
 
     A page's lines and refunds go in before its orders, so the latest
     order loaded, which the next load starts from, always has them. The
     products come after the orders, then the deletions of products since
     the same time: a deleted product's updated_at is the deletion's time,
-    so the next load starts from it too.
+    so the next load starts from it too. A reload reads every order,
+    product and deletion again, as the first load does, and appends them
+    to what is loaded: a column the input gained is filled in the rows
+    loaded before it, and nothing the store no longer returns is lost.
     Returns the number of rows appended to each table.
     """
-    _require_input(client, database, label)
+    require_input(client, database, label)
     counts = dict.fromkeys(TABLES, 0)
-    start = since(client, database, "orders")
+    start = FIRST_LOAD_SINCE if reload else since(client, database, "orders")
     for orders in _pages(fetch, "orders", f"updated_at:>='{start}'"):
         tables: dict[str, list[dict[str, Any]]] = {t: [] for t in ORDER_TABLES}
         for order in orders:
@@ -471,7 +504,7 @@ def load(client: Client, fetch: Fetch, database: str, label: str) -> dict[str, i
                 _insert(client, database, name, tables[name])
                 counts[name] += len(tables[name])
         print(f"shopify: {len(orders)} orders since {start}", file=sys.stderr)
-    start = since(client, database, "products")
+    start = FIRST_LOAD_SINCE if reload else since(client, database, "products")
     for products in _pages(fetch, "products", f"updated_at:>='{start}'"):
         if products:
             _insert(client, database, "products", [product_row(p) for p in products])

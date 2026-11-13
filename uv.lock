@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -477,7 +477,7 @@ dev = [
 requires-dist = [
     { name = "certifi", specifier = ">=2024.2" },
     { name = "clickhouse-connect", extras = ["arrow"], specifier = ">=0.8" },
-    { name = "dactopus-ossie-clickhouse", extras = ["mcp"], specifier = "~=0.16.0" },
+    { name = "dactopus-ossie-clickhouse", extras = ["mcp"], specifier = "~=0.17.0" },
     { name = "dbt-clickhouse", specifier = "~=1.10.0" },
     { name = "dbt-core", specifier = "~=1.11.0" },
     { name = "google-auth", specifier = ">=2.30" },
@@ -494,7 +494,7 @@ dev = [
 
 [[package]]
 name = "dactopus-ossie-clickhouse"
-version = "0.16.0"
+version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "clickhouse-connect" },
@@ -502,9 +502,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlglot" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/41/00/18b5f9d314ab3c981d0152df1d0729c30b63d308ce86975f0f23cc7ef55a/dactopus_ossie_clickhouse-0.16.0.tar.gz", hash = "sha256:94d1acfc59c5c44ff21d02b895efd1322f8b7d20d954f0769b81f78d9c4f48f9", size = 365896, upload-time = "2026-11-11T07:22:50.066Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/73/356dcc58f202b618cd8da9305d0e4c72556953f2d863074b3bff52c70823/dactopus_ossie_clickhouse-0.17.0.tar.gz", hash = "sha256:f401227f6f6f6d55d9e50448cbc4210c260cc13cdcb06bc97b08fdca2721eb4c", size = 361321, upload-time = "2026-11-13T02:45:04.357Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/12/70/4947d764e5f35fc2241a0ffec8e8006f928a6e32eb3552582b2dda8c57c2/dactopus_ossie_clickhouse-0.16.0-py3-none-any.whl", hash = "sha256:119a71224ecbfcd40a02a90b3eaecadc6f5daa5d33e23b3a4ed4a2cf38bb8e13", size = 102918, upload-time = "2026-11-11T07:22:48.435Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/93/5f04318423a9b22b3b798800374ea94ceadbfdaff97fb229322633fb77e8/dactopus_ossie_clickhouse-0.17.0-py3-none-any.whl", hash = "sha256:e7783088ddd47a43dae357de0ece3e6b002bd0f65132323ad94a9c86d76a96cf", size = 103340, upload-time = "2026-11-13T02:45:02.894Z" },
 ]
 
 [package.optional-dependencies]

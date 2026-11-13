@@ -21,11 +21,15 @@ from dactopus.config import Shopify
 # The refunds' processedAt, which the query reads since library v0.7.2, was
 # read from the store on 2026-10-27; for these refunds, made in the admin,
 # it equals createdAt.
+# The billingAddress of every order, which the query reads since library
+# v0.13.1, was read from the store on 2026-11-13 with API 2026-10: the
+# orders created through the API have none.
 PAGES = json.loads((Path(__file__).parent / "fixtures/shopify_orders.json").read_text())
 # A page with #1022, recorded on 2026-10-27 through the connector with
-# shopify.QUERY's fields: an order and a refund created through the API
-# with processedAt in the past (stage 0 of the history stand), so the
-# refund's createdAt is four months after its processedAt.
+# shopify.QUERY's fields (its billingAddress on 2026-11-13): an order and a
+# refund created through the API with processedAt in the past (stage 0 of
+# the history stand), so the refund's createdAt is four months after its
+# processedAt.
 IMPORTED = json.loads((Path(__file__).parent / "fixtures/shopify_order_imported.json").read_text())
 NOTHING = [{"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": []}]
 # Pages answering shopify.PRODUCTS_QUERY and shopify.DELETIONS_QUERY: the
@@ -144,7 +148,7 @@ def test_a_library_without_products_is_refused_before_loading(shopify_input):
         shopify.load(client, api, database, "shopify")
     assert str(refused.value) == (
         "shopify: the input of the models library has no products table; set models.version, "
-        "or the checkout at models.path, to v0.7.2 or later; nothing has been loaded yet."
+        "or the checkout at models.path, to v0.13.1 or later; nothing has been loaded yet."
     )
     assert api.calls == []
     assert _table(client, database, "orders") == []
@@ -160,13 +164,75 @@ def test_refunds_without_processed_at_are_refused_before_loading(shopify_input):
     assert str(refused.value) == (
         f"shopify: the input table {database}.refunds has no processed_at column, the date of "
         "a refund since models library v0.7.2. With an older library, set models.version, or "
-        "the checkout at models.path, to v0.7.2 or later. With v0.7.2 or later, the table is "
+        "the checkout at models.path, to v0.13.1 or later. With v0.13.1 or later, the table is "
         "older than the library: add the column as the library's UPGRADING.md for 0.7.2 says "
         "(https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#072), then run "
         "`dactopus run --full-refresh shopify`. Nothing has been loaded yet."
     )
     assert api.calls == []
     assert _table(client, database, "orders") == []
+
+
+def test_orders_without_the_billing_address_are_refused_before_loading(shopify_input):
+    """An orders table from before v0.13.1, or a library older than it."""
+    client, database = shopify_input
+    client.command(f"ALTER TABLE `{database}`.orders DROP COLUMN billing_city")
+    api = FakeAPI(ALL)
+    with pytest.raises(shopify.LoadError) as refused:
+        shopify.load(client, api, database, "main_store")
+    assert str(refused.value) == (
+        f"shopify: the input table {database}.orders has no billing_country_code, "
+        "billing_province_code, billing_city columns, the address an order was billed to "
+        "since models library v0.13.1. With an older library, set models.version, or the "
+        "checkout at models.path, to v0.13.1 or later. With v0.13.1 or later, the table is "
+        "older than the library: add the columns as the library's UPGRADING.md for 0.13.1 "
+        "says (https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#0131), "
+        "then run `dactopus run --reload main_store`. Nothing has been loaded yet."
+    )
+    assert api.calls == []
+    assert _table(client, database, "orders") == []
+
+
+def test_an_order_keeps_the_address_it_was_billed_to(shopify_input):
+    client, database = shopify_input
+    shopify.load(client, FakeAPI(ALL), database, "shopify")
+    billed = client.query(
+        "SELECT name, billing_country_code, billing_province_code, billing_city "
+        f"FROM `{database}`.orders ORDER BY name"
+    ).result_rows
+    assert billed == [
+        ("#1004", None, None, None),
+        ("#1007", "CA", None, "Toronto"),
+        ("#1011", None, None, None),
+        ("#1013", None, None, None),
+        ("#1016", None, None, None),
+        ("#1017", "CA", "AB", "Calgary"),
+        ("#1019", "CA", "ON", "Toronto"),
+    ]
+
+
+def test_a_reload_reads_everything_again_and_keeps_what_was_loaded(shopify_input):
+    """The store returns less than was loaded (orders past 60 days); nothing is lost."""
+    client, database = shopify_input
+    shopify.load(client, FakeAPI(ALL), database, "shopify")
+    returned = {"orders": PAGES[1:], "products": NOTHING, "events": NOTHING}
+    api = FakeAPI(returned)
+    shopify.load(client, api, database, "shopify", reload=True)
+    first = "updated_at:>='2000-01-01T00:00:00Z'"
+    assert api.calls == [
+        ("orders", {"cursor": None, "filter": first}),
+        ("products", {"cursor": None, "filter": first}),
+        (
+            "events",
+            {
+                "cursor": None,
+                "filter": "subject_type:PRODUCT AND action:destroy AND "
+                "created_at:>='2000-01-01T00:00:00Z'",
+            },
+        ),
+    ]
+    assert len(_table(client, database, "orders")) == 7 + 3
+    assert len(_table(client, database, "products")) == 19
 
 
 def test_a_refund_keeps_the_date_it_was_processed(shopify_input):
