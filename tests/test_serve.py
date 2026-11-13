@@ -153,9 +153,9 @@ def test_serve_hands_the_files_and_url_to_the_executor(tmp_path, monkeypatch):
 
 def test_serve_error_goes_to_stderr(tmp_path, monkeypatch, capsys):
     path = tmp_path / "dactopus.yaml"
-    assert "version: v0.13.0" in config.SAMPLE
+    assert "version: v0.13.1" in config.SAMPLE
     root = _library(tmp_path, files=[])
-    path.write_text(config.SAMPLE.replace("version: v0.13.0", f"path: {root}"))
+    path.write_text(config.SAMPLE.replace("version: v0.13.1", f"path: {root}"))
     assert main(["serve", "--config", str(path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -333,7 +333,7 @@ def test_unreadable_models_stop_every_command_before_it_connects(
 ):
     root = _served_library(tmp_path, version="0.2.0.dev0")
     path = tmp_path / "dactopus.yaml"
-    path.write_text(config.SAMPLE.replace("version: v0.13.0", f"path: {root}"))
+    path.write_text(config.SAMPLE.replace("version: v0.13.1", f"path: {root}"))
     monkeypatch.setattr(
         "dactopus.cli.clickhouse.connect", lambda settings: pytest.fail("connected")
     )

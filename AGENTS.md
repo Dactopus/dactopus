@@ -158,8 +158,10 @@ generated.
   pages of 100 products and the deletions of products from the store's
   events; an incremental load filters `updated_at:>=` from the latest
   loaded change of its kind minus one hour and appends the versions it
-  gets (the package keeps every version and dedupes). Bulk operations do
-  not deliver refund lines; do not use them for the full load.
+  gets (the package keeps every version and dedupes); `run --reload`
+  reads from the first order instead and appends the same way. Bulk
+  operations do not deliver refund lines; do not use them for the full
+  load.
 - A check is a named object that takes a ClickHouse connection and the
   installation's configuration and returns findings. A finding has one
   shape for built-in and plugin checks alike: check, object, severity,

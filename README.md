@@ -141,9 +141,11 @@ orders only. Two Shopify stores name different environment variables in
 A load writes into the input tables the models library's `input.sql`
 creates, and `input.sql` creates a table only if it is missing, so a
 column a later release adds is not in a table an earlier one created.
-For the Shopify refunds' `processed_at` of v0.7.2, the date a refund
-counts on, the load stops before reading anything and names the table,
-the column and the library's UPGRADING.md, which says how to add it.
+For a column a release adds to the Shopify input (the refunds'
+`processed_at` of v0.7.2, the date a refund counts on; the orders'
+billing address of v0.13.1), the load stops before reading anything and
+names the table, the columns, the library's UPGRADING.md, which says how
+to add them, and the run that fills them in the rows loaded before.
 
 A source dbt cannot build, test or measure (a required variable of its
 package missing, say) does not stop the others: the report shows dbt's
@@ -170,6 +172,20 @@ twice on disk until its rebuild ends: dbt builds the new table next to the
 old one and swaps them when it is complete, so `serve` keeps answering
 from the old table meanwhile.
 
+`dactopus run --reload LABEL [LABEL ...]` loads the named Shopify
+sources from the first order, as their first load did, then builds them
+as `--full-refresh` does. Run it once when a release of the models
+library adds a column to the Shopify input: the orders loaded before
+have the column empty until Shopify delivers them again. The reload
+appends what the store returns and deletes nothing, so the orders the
+store no longer returns (older than 60 days without `read_all_orders`)
+stay as they were, without the new column. It reads the whole store
+again, which takes as long as the first load did. A reload that stops
+starts over with `--reload`: a run without it would start after the
+latest change already reloaded. GA4 is not reloaded: every run rereads
+the days of `ga4_lookback_days`, and a reread of the whole export is
+paid for in BigQuery.
+
 ## Models library and runner
 
 A release of the runner reads the releases of the models library made
@@ -178,6 +194,7 @@ version of the Ossie schema the models are written in.
 
 | Runner | Models library | dactopus-ossie-clickhouse |
 |---|---|---|
+| 0.6 | v0.13.0 or later; v0.13.1 or later with a Shopify source | 0.17 |
 | 0.5 | v0.13.0 or later | 0.16 |
 | 0.4 | v0.12.2 | 0.14 |
 

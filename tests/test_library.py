@@ -242,7 +242,7 @@ def test_a_library_without_unions_is_refused(tmp_path):
     with pytest.raises(LibraryError) as found:
         _check(tmp_path, root=root)
     assert str(found.value) == (
-        "The models library v0.13.0 has no unions/, which came in v0.9.0 with the labels of "
+        "The models library v0.13.1 has no unions/, which came in v0.9.0 with the labels of "
         "the sources; set models.version to v0.13.0 or later."
     )
 
@@ -341,7 +341,7 @@ def test_a_wrong_union_declaration_is_refused(tmp_path, text, message):
 @pytest.mark.parametrize("version", ["v0.12.2", "v0.10.0", "v0.9.0", "v0.2.1"])
 def test_a_release_before_the_floor_is_refused(tmp_path, version):
     with pytest.raises(LibraryError) as found:
-        _check(tmp_path, "version: v0.13.0", f"version: {version}")
+        _check(tmp_path, "version: v0.13.1", f"version: {version}")
     assert str(found.value) == (
         f"The models library {version} is older than v0.13.0, the first the runner reads; "
         "set models.version to v0.13.0 or later."
@@ -359,7 +359,7 @@ def test_a_release_before_the_floor_is_not_downloaded(tmp_path):
 @pytest.mark.parametrize("version", ["v0.13.0", "v0.13.10", "v0.14.0", "v1.0.0", "v0.100.0"])
 def test_a_release_from_the_floor_is_accepted(tmp_path, version):
     # Numbers are compared, not strings: v0.13.0 < v0.13.10 < v0.100.0.
-    _check(tmp_path, "version: v0.13.0", f"version: {version}")
+    _check(tmp_path, "version: v0.13.1", f"version: {version}")
 
 
 def test_a_checkout_is_not_compared_to_the_floor(tmp_path):

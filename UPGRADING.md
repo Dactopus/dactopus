@@ -12,6 +12,29 @@ its installations to that library's
 too: the steps below say what the runner does for them, and the
 library's say what changes in the tables and the models.
 
+## Unreleased
+
+The runner installs dactopus-ossie-clickhouse 0.17 and loads the
+billing address of Shopify orders, which the models library has in its
+Shopify input from v0.13.1; it refuses a Shopify input without it.
+
+- Set `models.version` to v0.13.1.
+- For each Shopify source, add the three columns to the `orders` table
+  of its input database (`dactopus_<label>_raw` unless the source names
+  another in `input_database`), as the library's
+  [UPGRADING.md for 0.13.1](https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#0131)
+  says.
+- Run `dactopus run --reload <label>` once for each Shopify source and
+  `dactopus run --full-refresh <label>` for each WooCommerce source; one
+  run takes both flags. The reload loads every order again, so that
+  the orders loaded before get their billing address, and rebuilds the
+  source. Without `read_all_orders` the orders older than 60 days keep
+  an empty one.
+- Expect `ROUND` and `MOD` in an agent's answers to change: `ROUND` of
+  a value exactly halfway rounds away from zero (2.5 to 3, was 2), and
+  `MOD` of a decimal aligns the scales. The changelog of
+  dactopus-ossie-clickhouse 0.17.0 has both.
+
 ## 0.5.0
 
 The runner reads the models library v0.13.0 or later and installs

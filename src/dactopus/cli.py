@@ -39,21 +39,48 @@ def _parser() -> argparse.ArgumentParser:
                 help="rebuild the canonical tables of the sources with these labels (every "
                 "source when none is named) from the input, with dbt build --full-refresh",
             )
+            command.add_argument(
+                "--reload",
+                nargs="+",
+                metavar="LABEL",
+                help="load every order and product of these Shopify sources again, from the "
+                "first, then rebuild them as --full-refresh does",
+            )
     return parser
+
+
+def _labels(flag: str, names: list[str], cfg: config.Config) -> None:
+    """Refuse a label of a flag that the configuration lacks."""
+    configured = list(cfg.sources)
+    unknown = sorted(set(names) - set(configured))
+    if unknown:
+        raise config.ConfigError(
+            f"{flag}: {', '.join(unknown)} not in the configuration; "
+            f"configured: {', '.join(configured)}."
+        )
 
 
 def full_refresh(names: list[str] | None, cfg: config.Config) -> set[str]:
     """The sources `--full-refresh` rebuilds: none without the flag, all without labels."""
     if names is None:
         return set()
-    configured = list(cfg.sources)
-    unknown = sorted(set(names) - set(configured))
-    if unknown:
+    _labels("--full-refresh", names, cfg)
+    return set(names or cfg.sources)
+
+
+def reload(names: list[str] | None, cfg: config.Config) -> set[str]:
+    """The Shopify sources `--reload` loads from the first order: none without the flag."""
+    if names is None:
+        return set()
+    _labels("--reload", names, cfg)
+    other = sorted(n for n in names if not isinstance(cfg.sources[n].loader, config.Shopify))
+    if other:
         raise config.ConfigError(
-            f"--full-refresh: {', '.join(unknown)} not in the configuration; "
-            f"configured: {', '.join(configured)}."
+            f"--reload: {', '.join(other)} not a Shopify source; the runner reloads only "
+            "Shopify. A GA4 source rereads the days of ga4_lookback_days on every run; "
+            "the input of a source without a loader is written by the client."
         )
-    return set(names or configured)
+    return set(names)
 
 
 def _init(args: argparse.Namespace) -> int:
@@ -97,7 +124,9 @@ def _library(cfg: config.Config) -> Path:
 
 def _run(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
-    refresh = full_refresh(args.full_refresh, cfg)
+    reloaded = reload(args.reload, cfg)
+    # A reload delivers the rows again; only a rebuild reads them all.
+    refresh = full_refresh(args.full_refresh, cfg) | reloaded
     root = _library(cfg)
     # Refused before anything is written: a zone other than the shop's. Tables
     # built in another zone stop the source's build in its package (the
@@ -134,6 +163,9 @@ def _run(args: argparse.Namespace) -> int:
                 ga4.load(client, export, database, lookback)
         else:
             fetch = shopify.graphql(loader.shop, tokens[label])
+            if label in reloaded:
+                _reload(client, fetch, database, label)
+                continue
             with _step(f"{label}: loading orders and products into {database}", _AGAIN):
                 shopify.load(client, fetch, database, label)
     for label in cfg.sources:
@@ -142,6 +174,28 @@ def _run(args: argparse.Namespace) -> int:
     for union in library.unions_of(cfg, root):
         _each(build.build, cfg, root, build.union_key(union))
     return _report(cfg, root, client)
+
+
+def _reload(client: clickhouse.Client, fetch: shopify.Fetch, database: str, label: str) -> None:
+    """Load a Shopify source from the first order; a reload that stops starts over.
+
+    A run without --reload would start after the latest change loaded, which
+    the reload has already passed, and skip the rest of the store.
+    """
+    again = (
+        f"run `dactopus run --reload {label}` again: a reload starts over from the first "
+        "order, and a run without --reload would not finish it."
+    )
+    # Refused before anything is read, with its own next action.
+    with _step(f"{label}: reading the input tables of {database}", _AGAIN):
+        shopify.require_input(client, database, label)
+    try:
+        with _step(
+            f"{label}: reloading orders and products into {database}", f"fix the cause and {again}"
+        ):
+            shopify.load(client, fetch, database, label, reload=True)
+    except shopify.LoadError as exc:
+        raise shopify.LoadError(f"{exc} After that, {again}") from None
 
 
 def _check(args: argparse.Namespace) -> int:

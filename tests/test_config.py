@@ -38,7 +38,7 @@ def test_sample_loads(tmp_path):
     config.write_sample(path)
     loaded = config.load(path, environ={})
     assert loaded.clickhouse.database == "dactopus"
-    assert loaded.models.version == "v0.13.0"
+    assert loaded.models.version == "v0.13.1"
     assert [(s.label, s.package) for s in loaded.sources.values()] == [
         ("website", "ga4"),
         ("main_store", "shopify"),

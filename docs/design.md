@@ -414,3 +414,32 @@ changed columns or settings and names `--full-refresh`.
 
 Verified with dactopus-ossie-clickhouse 0.16.0 on the models library
 v0.13.0 and on a model of schema `0.2.0.dev0` (11 November 2026).
+
+## Reloading a Shopify source (13 November 2026)
+
+The decision: `dactopus run --reload LABEL ...` loads the named Shopify
+sources from the first order, product and deletion, appends what the
+store returns to the input, and rebuilds the sources as `--full-refresh`
+does. It takes Shopify sources only and needs at least one label. The
+runner does not add the columns a release adds to the input: the owner
+adds them as the library's UPGRADING.md says, and the load refuses an
+input without them, naming `--reload`.
+
+Why: the models library v0.13.1 added the billing address to the
+Shopify input and asks every order to be exported again, since the
+orders already loaded have none. The incremental load starts an hour
+before the latest change loaded, so without a flag the one way to read
+the store again was to empty the input's orders table by hand. That
+deletes what the store may not return again, such as the orders older
+than 60 days when the app lacks `read_all_orders`, and it is a manual
+statement on the client's data. Appending is harmless: the input is a
+log of versions, and the package reads the latest.
+
+Not for GA4: every run rereads the days of `ga4_lookback_days` and
+replaces them, and a reread of the whole export is paid for with the
+Storage Read API. A source without a loader has an input the runner
+does not write.
+
+A reload that stops starts over: a run without the flag would start
+after the latest change the reload delivered and skip the rest of the
+store, so the error says to run `--reload` again.
