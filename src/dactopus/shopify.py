@@ -41,7 +41,10 @@ FIRST_LOAD_SINCE = "2000-01-01T00:00:00Z"
 # fills: products came in v0.7.0, refunds.processed_at (the date Shopify's
 # reports count a refund on) in v0.7.2.
 LIBRARY_SINCE = "v0.7.2"
-LIBRARY_UPGRADING = "https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#072"
+LIBRARY_UPGRADING = (
+    "https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#"
+    + LIBRARY_SINCE.removeprefix("v").replace(".", "")
+)
 
 MONEY = "{ shopMoney { amount } }"
 QUERY = f"""query ($cursor: String, $filter: String) {{
