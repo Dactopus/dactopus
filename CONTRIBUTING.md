@@ -36,17 +36,44 @@ client's own tools; read it before proposing a feature.
 
 ## Pull requests
 
-Small and focused. CI runs lint, the format check and the tests. By
+Small and focused. CI runs lint, the format check and the unit tests on
+Python 3.11 to 3.13, and builds the package and checks that its README
+renders as the PyPI page. By
 submitting a contribution you agree it is licensed under the Apache
 License 2.0, like the rest of the project.
+
+## Changelog and upgrading
+
+`CHANGELOG.md` follows [Common Changelog](https://common-changelog.org)
+and is written at release ([Releasing](#releasing)); a pull request
+leaves it alone. A pull request after which an installation must act
+adds a step under `## Unreleased` in `UPGRADING.md`, created if absent:
+in the imperative, what to change in the configuration, a grant, a
+command to run once. An item that starts with "Expect" names what
+behaves differently with nothing to change, such as a question an agent
+now answers.
+
+Links in both files are absolute: a release's `CHANGELOG.md` section
+becomes its notes on GitHub, where a relative link breaks.
 
 ## Releasing
 
 For maintainers. A release is the tag `vX.Y.Z` on a commit on `main`; the
 GitHub release is titled `X.Y.Z`.
 
-1. Move the `[Unreleased]` entries in `CHANGELOG.md` under
-   `## [X.Y.Z] - YYYY-MM-DD`, leaving `[Unreleased]` empty.
+1. Write the release's section of `CHANGELOG.md` from the pull requests
+   merged since the last tag: `## [X.Y.Z] - YYYY-MM-DD`, with
+   `[X.Y.Z]: <its GitHub release>` at the end of the file; groups
+   `Changed`, `Added`, `Removed`, `Fixed`, in that order; one line per
+   change, in the imperative, ending with its pull request, then any
+   issue and the section of `docs/design.md` that says why; breaking
+   changes first in their group, as `**Breaking:**`. A new floor of the
+   models library or a new version of dactopus-ossie-clickhouse is a
+   line of its own. Leave out what changes nothing for an installation,
+   such as tests, CI and contributor docs. If `UPGRADING.md` has
+   `## Unreleased`, rename it `## X.Y.Z`, and open the release's section
+   with one sentence in italics that links to `UPGRADING.md#XYZ` by its
+   absolute URL.
 2. Set `version` in `pyproject.toml` and run `uv lock`.
 3. Push, wait for CI, merge with "Rebase and merge".
 4. Rehearse on `main`: run the Publish workflow by hand. It uploads the
@@ -58,8 +85,9 @@ GitHub release is titled `X.Y.Z`.
 5. Tag the commit on `main`, never one on the branch: rebasing changes the
    hashes. Publishing the release on GitHub runs the Publish workflow,
    which checks that the tag is the version in `pyproject.toml` and its
-   commit is on `main`, then uploads to PyPI. The release notes are the changelog section plus the
-   install line pinned to the version.
+   commit is on `main`, then uploads to PyPI. The release notes are the
+   changelog section without its heading, then the install line pinned
+   to the version.
 
 ```bash
 git switch main && git pull --ff-only
