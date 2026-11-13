@@ -12,7 +12,7 @@ its installations to that library's
 too: the steps below say what the runner does for them, and the
 library's say what changes in the tables and the models.
 
-## Unreleased
+## 0.6.0
 
 The runner installs dactopus-ossie-clickhouse 0.17 and loads the
 billing address of Shopify orders, which the models library has in its

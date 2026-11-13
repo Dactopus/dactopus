@@ -2,6 +2,20 @@
 
 The format follows [Common Changelog](https://common-changelog.org); versions follow [Semantic Versioning](https://semver.org), and while the major version is 0, a minor release may change the command line and the configuration file. What an installation does to move to a release: [UPGRADING.md](https://github.com/Dactopus/dactopus/blob/main/UPGRADING.md). Why the runner is built as it is: [docs/design.md](https://github.com/Dactopus/dactopus/blob/main/docs/design.md).
 
+## [0.6.0] - 2026-11-13
+
+_Moving to it takes the models library v0.13.1, three columns in the input of each Shopify source, and one `dactopus run --reload` of each Shopify source and `--full-refresh` of each WooCommerce source ([Upgrading](https://github.com/Dactopus/dactopus/blob/main/UPGRADING.md#060))._
+
+### Changed
+
+- **Breaking:** Require the models library v0.13.1 or later for a Shopify source, and its billing address columns in the input's `orders`; an input without them is refused before anything is loaded, naming the library's upgrade steps ([#40](https://github.com/Dactopus/dactopus/pull/40))
+- Install dactopus-ossie-clickhouse 0.17, which rounds a value exactly halfway away from zero and aligns the scales in `MOD` of a decimal ([#40](https://github.com/Dactopus/dactopus/pull/40))
+
+### Added
+
+- Load the address a Shopify order was billed to: its country, province and city ([#40](https://github.com/Dactopus/dactopus/pull/40))
+- Add `dactopus run --reload LABEL ...`, which loads the named Shopify sources again from the first order, keeps what was loaded, and rebuilds them ([#40](https://github.com/Dactopus/dactopus/pull/40), [decision](https://github.com/Dactopus/dactopus/blob/main/docs/design.md#reloading-a-shopify-source-13-november-2026))
+
 ## [0.5.0] - 2026-11-11
 
 _Moving to it takes the models library v0.13.0 and one `dactopus run` before `dactopus serve` ([Upgrading](https://github.com/Dactopus/dactopus/blob/main/UPGRADING.md#050))._
@@ -98,6 +112,7 @@ _Initial release, a prototype, on the models library v0.8.0 and dactopus-ossie-c
 - Read what the runner needs of a package from its `deployment.yml` in the models library ([#13](https://github.com/Dactopus/dactopus/pull/13))
 - Pass one time zone per installation to the packages and to `serve`, and refuse a Shopify store in another ([#14](https://github.com/Dactopus/dactopus/pull/14))
 
+[0.6.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Dactopus/dactopus/releases/tag/v0.3.0
