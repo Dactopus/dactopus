@@ -125,7 +125,8 @@ def _library(cfg: config.Config) -> Path:
 def _run(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
     reloaded = reload(args.reload, cfg)
-    # A reload delivers the rows again; only a rebuild reads them all.
+    # A reload follows a column the input gained, and an incremental build
+    # stops on the columns it adds to the canonical tables.
     refresh = full_refresh(args.full_refresh, cfg) | reloaded
     root = _library(cfg)
     # Refused before anything is written: a zone other than the shop's. Tables
