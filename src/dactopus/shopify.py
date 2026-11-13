@@ -456,10 +456,13 @@ def require_input(client: Client, database: str, label: str) -> None:
             "AND table = {t:String} AND name IN {c:Array(String)}",
             parameters={"db": database, "t": table, "c": list(columns)},
         ).result_rows
-        if len(found) == len(columns):
+        # Only the missing ones: the library's ALTER fails on a column the
+        # table already has.
+        missing = [c for c in columns if (c,) not in found]
+        if not missing:
             continue
-        listed = ", ".join(columns)
-        plural = "column" if len(columns) == 1 else "columns"
+        listed = ", ".join(missing)
+        plural = "column" if len(missing) == 1 else "columns"
         raise LoadError(
             f"shopify: the input table {database}.{table} has no {listed} {plural}, "
             f"{holds} since models library {release}. With an older library, set "

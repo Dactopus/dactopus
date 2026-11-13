@@ -173,20 +173,35 @@ def test_refunds_without_processed_at_are_refused_before_loading(shopify_input):
     assert _table(client, database, "orders") == []
 
 
-def test_orders_without_the_billing_address_are_refused_before_loading(shopify_input):
+@pytest.mark.parametrize(
+    ("dropped", "named"),
+    [
+        (
+            ("billing_country_code", "billing_province_code", "billing_city"),
+            "billing_country_code, billing_province_code, billing_city columns",
+        ),
+        # Added by hand but one: the library's ALTER fails on the others.
+        (("billing_city",), "billing_city column"),
+    ],
+)
+def test_orders_without_the_billing_address_are_refused_before_loading(
+    shopify_input, dropped, named
+):
     """An orders table from before v0.13.1, or a library older than it."""
     client, database = shopify_input
-    client.command(f"ALTER TABLE `{database}`.orders DROP COLUMN billing_city")
+    drops = ", ".join(f"DROP COLUMN {c}" for c in dropped)
+    client.command(f"ALTER TABLE `{database}`.orders {drops}")
     api = FakeAPI(ALL)
     with pytest.raises(shopify.LoadError) as refused:
         shopify.load(client, api, database, "main_store")
+    noun = named.rsplit(" ", 1)[1]
     assert str(refused.value) == (
-        f"shopify: the input table {database}.orders has no billing_country_code, "
-        "billing_province_code, billing_city columns, the address an order was billed to "
-        "since models library v0.13.1. With an older library, set models.version, or the "
-        "checkout at models.path, to v0.13.1 or later. With v0.13.1 or later, the table is "
-        "older than the library: add the columns as the library's UPGRADING.md for 0.13.1 "
-        "says (https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#0131), "
+        f"shopify: the input table {database}.orders has no {named}, the address an order "
+        "was billed to since models library v0.13.1. With an older library, set "
+        "models.version, or the checkout at models.path, to v0.13.1 or later. With v0.13.1 or "
+        f"later, the table is older than the library: add the {noun} as the library's "
+        "UPGRADING.md for 0.13.1 says "
+        "(https://github.com/Dactopus/dactopus-data-models/blob/main/UPGRADING.md#0131), "
         "then run `dactopus run --reload main_store`. Nothing has been loaded yet."
     )
     assert api.calls == []
@@ -233,6 +248,30 @@ def test_a_reload_reads_everything_again_and_keeps_what_was_loaded(shopify_input
     ]
     assert len(_table(client, database, "orders")) == 7 + 3
     assert len(_table(client, database, "products")) == 19
+
+
+def test_a_reload_bills_the_orders_loaded_before_the_billing_address(shopify_input):
+    """The version the package reads, the latest loaded of an order, has the address."""
+    client, database = shopify_input
+    unbilled = json.loads(json.dumps(PAGES))
+    for page in unbilled:
+        for order in page["nodes"]:
+            order["billingAddress"] = None
+    shopify.load(client, FakeAPI({**ALL, "orders": unbilled}), database, "shopify")
+    shopify.load(client, FakeAPI(ALL), database, "shopify", reload=True)
+    latest = client.query(
+        "SELECT name, billing_country_code, billing_province_code, billing_city "
+        f"FROM `{database}`.orders ORDER BY id, updated_at DESC, loaded_at DESC LIMIT 1 BY id"
+    ).result_rows
+    assert sorted(latest) == [
+        ("#1004", None, None, None),
+        ("#1007", "CA", None, "Toronto"),
+        ("#1011", None, None, None),
+        ("#1013", None, None, None),
+        ("#1016", None, None, None),
+        ("#1017", "CA", "AB", "Calgary"),
+        ("#1019", "CA", "ON", "Toronto"),
+    ]
 
 
 def test_a_refund_keeps_the_date_it_was_processed(shopify_input):
